@@ -1,0 +1,508 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { PollModel } from "../../util/polls";
+import { GroupModel } from "../../util/groups";
+import { UserModel } from "../../util/users";
+import { PollOptionModel } from "../../util/poll_options";
+import { PollVoterModel } from "../../util/poll_voters";
+import crypto from "crypto";
+
+// Kontrola oprávnění - pouze organizátor nebo admin může vytvářet ankety
+const user = await Astro.session?.get("user");
+if (!user || (!user.organizator && !user.administrator)) {
+    return Astro.redirect("/");
+}
+
+// Získání skupin, kterých je uživatel vlastníkem
+const userGroups = await GroupModel.getByOwnerId(user.id);
+
+let message = "";
+let messageType = "";
+let pollLink = "";
+let voterLinks = [];
+
+// Zpracování formuláře
+if (Astro.request.method === "POST") {
+    try {
+        const formData = await Astro.request.formData();
+
+        // Základní údaje ankety
+        const pollName = formData.get("poll-name");
+        const expiresStr = formData.get("poll-expires");
+        const expires = expiresStr ? new Date(expiresStr) : null;
+        const isAnonymous = formData.get("poll-anonymous") === "on";
+        const groupId = formData.get("poll-group");
+        const maxOptions = parseInt(formData.get("poll-max-options")) || 1;
+        const votersCount = isAnonymous ? parseInt(formData.get("voters-count")) || 10 : 0;
+
+        // Vytvoření ankety
+        const poll = await PollModel.create({
+            name: pollName,
+            owner_id: user.id,
+            expires,
+            anonymous: isAnonymous,
+            group_id: isAnonymous ? null : (groupId !== "null" ? parseInt(groupId) : null),
+            max_options: maxOptions
+        });
+
+        // Přidání možností ankety
+        const optionsCount = parseInt(formData.get("options-count")) || 2;
+        for (let i = 1; i <= optionsCount; i++) {
+            const optionContent = formData.get(`option-${i}`);
+            if (optionContent) {
+                await PollOptionModel.create({
+                    poll_id: poll.id,
+                    content: optionContent,
+                    option_order: i - 1
+                });
+            }
+        }
+
+        // Pokud je anketa anonymní, vygenerujeme volební klíče
+        if (isAnonymous) {
+            // Generování volebních klíčů pro anonymní anketu
+            voterLinks = [];
+            for (let i = 0; i < votersCount; i++) {
+                // Uložení klíče do databáze a získání ID
+                const keypair = await PollVoterModel.generateKeypair(poll.id);
+
+                // Vytvoření hashe pro verifikaci - kombinuje ID ankety a ID klíče
+                const verificationHash = crypto.createHash('sha256')
+                    .update(`${poll.id}-${keypair.id}-${user.id}`)
+                    .digest('hex');
+
+                // Vytvoření odkazu pro hlasování
+                const link = `/poll/share/${poll.id}/${keypair.id}/${verificationHash}`;
+                voterLinks.push(new URL(link, Astro.url).href);
+            }
+
+            message = `Anonymní anketa "${pollName}" byla úspěšně vytvořena. Níže jsou odkazy pro hlasování.`;
+        } else {
+            message = `Anketa "${pollName}" byla úspěšně vytvořena.`;
+            pollLink = `/poll/${poll.id}`;
+        }
+
+        messageType = "success";
+    } catch (error) {
+        console.error("Chyba při vytváření ankety:", error);
+        message = `Chyba: ${error.message || "Nastala neočekávaná chyba při vytváření ankety"}`;
+        messageType = "error";
+    }
+}
+---
+
+<Layout title="Vytvořit novou anketu">
+    <div class="container">
+        <h1>Vytvoření nové ankety</h1>
+
+        {message && (
+                <div class={`message ${messageType}`}>
+                    <p>{message}</p>
+                    <button class="close-message">&times;</button>
+                </div>
+        )}
+
+        {pollLink && (
+                <div class="poll-link-container">
+                    <h3>Odkaz na anketu</h3>
+                    <div class="poll-link">
+                        <input type="text" id="poll-link" value={new URL(pollLink, Astro.url).href} readonly>
+                        <button class="btn" id="copy-link">Kopírovat</button>
+                    </div>
+                </div>
+        )}
+
+        {voterLinks.length > 0 && (
+                <div class="poll-link-container">
+                    <h3>Odkazy pro anonymní hlasování</h3>
+                    <p class="note">Každý odkaz lze použít jen jednou. Rozešlete tyto odkazy hlasujícím.</p>
+                    <div class="voter-links-actions">
+                        <button class="btn" id="copy-all-links">Kopírovat všechny odkazy</button>
+                        <button class="btn" id="download-csv">Stáhnout jako CSV</button>
+                    </div>
+                    <div class="voter-links-list">
+                        {voterLinks.map((link, index) => (
+                                <div class="voter-link">
+                                    <span class="voter-number">Odkaz {index + 1}:</span>
+                                    <input type="text" value={new URL(link, Astro.url).href} readonly>
+                                    <button class="btn-small copy-voter-link" data-link={new URL(link, Astro.url).href}>
+                                        Kopírovat
+                                    </button>
+                                </div>
+                        ))}
+                    </div>
+                </div>
+        )}
+
+        <form method="POST" class="create-poll-form">
+            <div class="form-group">
+                <label for="poll-name">Název ankety:</label>
+                <input type="text" id="poll-name" name="poll-name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="poll-expires">Končí (nechte prázdné pro neomezeně):</label>
+                <input type="datetime-local" id="poll-expires" name="poll-expires">
+            </div>
+
+            <div class="form-group checkbox-group">
+                <label>
+                    <input type="checkbox" name="poll-anonymous" id="poll-anonymous">
+                    Anonymní hlasování
+                </label>
+                <span class="hint">Při anonymním hlasování se generují unikátní odkazy pro každého hlasujícího</span>
+            </div>
+
+            <div class="form-group" id="voters-count-group" style="display: none;">
+                <label for="voters-count">Počet hlasujících:</label>
+                <input type="number" id="voters-count" name="voters-count" value="10" min="1" max="1000">
+                <span class="hint">Pro každého hlasujícího bude vygenerován unikátní odkaz</span>
+            </div>
+
+            <div class="form-group" id="group-selection">
+                <label for="poll-group">Skupina (pouze pro neanonymní hlasování):</label>
+                <a class="hint" href="/poll/group">Spravovat skupiny</a>
+                <select id="poll-group" name="poll-group">
+                    <option value="null">-- Bez skupiny --</option>
+                    {userGroups.map((group) => (
+                            <option value={group.id}>{group.name}</option>
+                    ))}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="poll-max-options">Maximální počet voleb:</label>
+                <input type="number" id="poll-max-options" name="poll-max-options" value="1" min="1">
+                <span class="hint">Kolik možností může každý hlasující zvolit</span>
+            </div>
+
+            <div class="form-group">
+                <label>Možnosti hlasování:</label>
+                <input type="hidden" name="options-count" id="options-count" value="2">
+                <div id="options-container">
+                    <div class="option-row">
+                        <input type="text" name="option-1" placeholder="Možnost 1" required>
+                    </div>
+                    <div class="option-row">
+                        <input type="text" name="option-2" placeholder="Možnost 2" required>
+                    </div>
+                </div>
+                <button type="button" id="add-option" class="btn btn-small">+ Přidat možnost</button>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Vytvořit anketu</button>
+                <a href="/admin" class="btn btn-secondary">Zrušit</a>
+            </div>
+        </form>
+    </div>
+</Layout>
+
+<style>
+    .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    h1 {
+        margin-bottom: 30px;
+        text-align: center;
+    }
+
+    .create-poll-form {
+        background-color: #f9f9f9;
+        padding: 25px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: bold;
+    }
+
+    input[type="text"],
+    input[type="datetime-local"],
+    input[type="number"],
+    select {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+        font-size: 16px;
+    }
+
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .checkbox-group input {
+        margin: 0;
+        width: auto;
+    }
+
+    .checkbox-group label {
+        margin-bottom: 0;
+        font-weight: normal;
+    }
+
+    .hint {
+        color: #666;
+        font-size: 14px;
+        margin-top: 5px;
+        font-style: italic;
+    }
+
+    .option-row {
+        margin-bottom: 10px;
+    }
+
+    .form-actions {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 30px;
+    }
+
+    .btn {
+        padding: 12px 20px;
+        border-radius: 4px;
+        font-size: 16px;
+        cursor: pointer;
+        border: none;
+    }
+
+    .btn-primary {
+        background-color: #4CAF50;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: #45a049;
+    }
+
+    .btn-secondary {
+        background-color: #f0f0f0;
+        color: #333;
+        border: 1px solid #ddd;
+    }
+
+    .btn-secondary:hover {
+        background-color: #e0e0e0;
+    }
+
+    .message {
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .success {
+        background-color: #dff0d8;
+        color: #3c763d;
+        border: 1px solid #d6e9c6;
+    }
+
+    .error {
+        background-color: #f2dede;
+        color: #a94442;
+        border: 1px solid #ebccd1;
+    }
+
+    .close-message {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        color: inherit;
+    }
+
+    .poll-link-container {
+        background-color: #e8f5e9;
+        border: 1px solid #c8e6c9;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+    }
+
+    .poll-link {
+        display: flex;
+        gap: 10px;
+        margin: 15px 0;
+    }
+
+    .poll-link input {
+        flex-grow: 1;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: #f8f8f8;
+    }
+
+    .note {
+        font-size: 14px;
+        color: #555;
+        font-style: italic;
+    }
+
+    .voter-links-list {
+        max-height: 300px;
+        overflow-y: auto;
+        margin-top: 15px;
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 4px;
+    }
+
+    .voter-link {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+        gap: 10px;
+    }
+
+    .voter-number {
+        min-width: 80px;
+        font-weight: bold;
+    }
+
+    .voter-link input {
+        flex-grow: 1;
+    }
+
+    .voter-links-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+    }
+
+    .btn-small {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+</style>
+
+<script>
+    // Dynamické přidávání možností k anketě
+    let optionCounter = 2;
+
+    document.getElementById('add-option').addEventListener('click', () => {
+        optionCounter++;
+        const optionsContainer = document.getElementById('options-container');
+        const newOption = document.createElement('div');
+        newOption.className = 'option-row';
+        newOption.innerHTML = `<input type="text" name="option-${optionCounter}" placeholder="Možnost ${optionCounter}" required>`;
+        optionsContainer.appendChild(newOption);
+        document.getElementById('options-count').value = optionCounter;
+    });
+
+    // Podmíněné zobrazování prvků pro anonymní anketu
+    const anonymousCheckbox = document.getElementById('poll-anonymous');
+    const groupSelection = document.getElementById('group-selection');
+    const votersCountGroup = document.getElementById('voters-count-group');
+
+    if (anonymousCheckbox) {
+        anonymousCheckbox.addEventListener('change', () => {
+            if (anonymousCheckbox.checked) {
+                groupSelection.style.display = 'none';
+                votersCountGroup.style.display = 'block';
+                document.getElementById('poll-group').value = 'null';
+            } else {
+                groupSelection.style.display = 'block';
+                votersCountGroup.style.display = 'none';
+            }
+        });
+    }
+
+    // Zavření zprávy
+    document.querySelectorAll('.close-message').forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.closest('.message').style.display = 'none';
+        });
+    });
+
+    // Kopírování odkazu do schránky
+    document.getElementById('copy-link')?.addEventListener('click', () => {
+        const linkInput = document.getElementById('poll-link');
+        linkInput.select();
+        document.execCommand('copy');
+
+        const copyBtn = document.getElementById('copy-link');
+        copyBtn.textContent = 'Zkopírováno!';
+        setTimeout(() => {
+            copyBtn.textContent = 'Kopírovat';
+        }, 2000);
+    });
+
+    // Kopírování jednotlivých odkazů pro hlasující
+    document.querySelectorAll('.copy-voter-link')?.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const link = btn.getAttribute('data-link');
+            const tempInput = document.createElement('input');
+            tempInput.value = link;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+
+            const originalText = btn.textContent;
+            btn.textContent = 'Zkopírováno!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
+        });
+    });
+
+    // Kopírování všech odkazů
+    document.getElementById('copy-all-links')?.addEventListener('click', () => {
+        const links = Array.from(document.querySelectorAll('.voter-link input')).map(input => input.value);
+        const text = links.join('\n');
+
+        const tempInput = document.createElement('textarea');
+        tempInput.value = text;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+
+        const btn = document.getElementById('copy-all-links');
+        btn.textContent = 'Zkopírováno!';
+        setTimeout(() => {
+            btn.textContent = 'Kopírovat všechny odkazy';
+        }, 2000);
+    });
+
+    // Stažení CSV se seznamem odkazů
+    document.getElementById('download-csv')?.addEventListener('click', () => {
+        const links = Array.from(document.querySelectorAll('.voter-link input')).map(input => input.value);
+        let csvContent = "data:text/csv;charset=utf-8,";
+
+        // Přidání záhlaví CSV
+        csvContent += "Odkaz pro hlasování\n";
+
+        // Přidání jednotlivých odkazů
+        links.forEach(link => {
+            csvContent += link + "\n";
+        });
+
+        // Vytvoření odkazu pro stažení
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "odkazy_pro_hlasovani.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+</script>

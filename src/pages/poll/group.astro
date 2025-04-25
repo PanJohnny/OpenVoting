@@ -1,0 +1,564 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { GroupModel } from "../../util/groups";
+import { GroupMembershipModel } from "../../util/group_memberships";
+import { UserModel } from "../../util/users";
+
+// Kontrola přihlášení uživatele
+const user = await Astro.session?.get("user");
+if (!user) {
+    return Astro.redirect("/login");
+}
+
+// Pouze organizátoři a admin mohou vytvářet skupiny
+const canCreateGroup = user.organizator || user.administrator;
+
+// Získání skupin, kterých je uživatel vlastníkem
+const ownedGroups = await GroupModel.getByOwnerId(user.id);
+
+// Získání skupin, kde je uživatel členem (ale není vlastníkem)
+const memberGroups = await GroupModel.getByMemberId(user.id);
+// Odfiltrujeme skupiny, kde je uživatel vlastníkem
+const filteredMemberGroups = memberGroups.filter(
+    group => !ownedGroups.some(og => og.id === group.id)
+);
+
+// Získání všech uživatelů pro přidání do skupin
+const allUsers = canCreateGroup ? await UserModel.getAll() : [];
+
+// Pro úpravu skupiny
+let editGroup = null;
+let editGroupMembers = [];
+
+// Zpracování formulářů
+let successMessage = "";
+let errorMessage = "";
+
+if (Astro.request.method === "POST") {
+    try {
+        const formData = await Astro.request.formData();
+        const action = formData.get("action")?.toString();
+
+        if (action === "create" && canCreateGroup) {
+            // Vytvoření nové skupiny
+            const groupName = formData.get("group-name")?.toString();
+
+            if (!groupName || groupName.trim() === "") {
+                errorMessage = "Název skupiny nemůže být prázdný";
+            } else {
+                await GroupModel.create({
+                    name: groupName,
+                    owner_id: user.id
+                });
+
+                // Aktualizace seznamu skupin
+                ownedGroups = await GroupModel.getByOwnerId(user.id);
+                successMessage = `Skupina "${groupName}" byla úspěšně vytvořena`;
+            }
+        }
+        else if (action === "delete") {
+            // Smazání skupiny
+            const groupId = parseInt(formData.get("group-id")?.toString() || "0");
+            const groupToDelete = ownedGroups.find(g => g.id === groupId);
+
+            if (groupToDelete) {
+                await GroupModel.delete(groupId);
+                // Aktualizace seznamu skupin
+                ownedGroups = await GroupModel.getByOwnerId(user.id);
+                successMessage = `Skupina "${groupToDelete.name}" byla smazána`;
+            }
+        }
+        else if (action === "update") {
+            // Aktualizace skupiny
+            const groupId = parseInt(formData.get("group-id")?.toString() || "0");
+            const groupName = formData.get("group-name")?.toString();
+
+            if (!groupName || groupName.trim() === "") {
+                errorMessage = "Název skupiny nemůže být prázdný";
+            } else {
+                await GroupModel.update(groupId, { name: groupName });
+                // Aktualizace seznamu skupin
+                ownedGroups = await GroupModel.getByOwnerId(user.id);
+                successMessage = `Skupina byla úspěšně aktualizována`;
+            }
+        }
+        else if (action === "add-member") {
+            // Přidání člena do skupiny
+            const groupId = parseInt(formData.get("group-id")?.toString() || "0");
+            const userId = parseInt(formData.get("user-id")?.toString() || "0");
+
+            if (groupId && userId) {
+                await GroupMembershipModel.addMember(userId, groupId);
+                successMessage = "Uživatel byl přidán do skupiny";
+            }
+        }
+        else if (action === "remove-member") {
+            // Odebrání člena ze skupiny
+            const groupId = parseInt(formData.get("group-id")?.toString() || "0");
+            const userId = parseInt(formData.get("user-id")?.toString() || "0");
+
+            if (groupId && userId) {
+                await GroupMembershipModel.removeMember(userId, groupId);
+                successMessage = "Uživatel byl odebrán ze skupiny";
+            }
+        }
+    } catch (error) {
+        console.error("Chyba při práci se skupinami:", error);
+        errorMessage = `Chyba: ${error.message || "Nastala neočekávaná chyba"}`;
+    }
+}
+
+// Funkce pro získání členů skupiny - bude použita při kliknutí na "Upravit"
+async function getGroupWithMembers(groupId) {
+    const group = await GroupModel.getById(groupId);
+    const members = await GroupMembershipModel.getMembersByGroupId(groupId);
+    return { group, members };
+}
+---
+
+<Layout title="Správa skupin">
+
+    <div class="container">
+        <h1>Správa skupin</h1>
+
+        {successMessage && (
+                <div class="message success">
+                    <span>{successMessage}</span>
+                    <button class="close-message">&times;</button>
+                </div>
+        )}
+
+        {errorMessage && (
+                <div class="message error">
+                    <span>{errorMessage}</span>
+                    <button class="close-message">&times;</button>
+                </div>
+        )}
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="owned">Moje skupiny</button>
+            <button class="tab-btn" data-tab="member">Členství ve skupinách</button>
+        </div>
+
+        <div class="tab-content active" id="tab-owned">
+            {canCreateGroup && (
+                    <div class="card">
+                        <h2>Vytvořit novou skupinu</h2>
+                        <form method="POST" class="create-form">
+                            <input type="hidden" name="action" value="create">
+                            <div class="form-group">
+                                <label for="group-name">Název skupiny:</label>
+                                <input type="text" id="group-name" name="group-name" required>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">Vytvořit skupinu</button>
+                            </div>
+                        </form>
+                    </div>
+            )}
+
+            <h2>Moje skupiny</h2>
+            {ownedGroups.length === 0 ? (
+                    <p class="empty-list">Zatím nevlastníte žádné skupiny.</p>
+            ) : (
+                    <div class="groups-container">
+                        {ownedGroups.map((group) => (
+                                <div class="group-card">
+                                    <div class="group-header">
+                                        <h3>{group.name}</h3>
+                                        <div class="group-actions">
+                                            <button class="btn btn-small edit-group-btn" data-group-id={group.id}>
+                                                Spravovat
+                                            </button>
+                                            <form method="POST" class="delete-form">
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="group-id" value={group.id}>
+                                                <button type="submit" class="btn btn-small btn-danger" data-confirm={`Opravdu chcete smazat skupinu "${group.name}"?`}>
+                                                    Smazat
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                    <div class="group-details" id={`group-details-${group.id}`} style="display: none;">
+                                        <div class="group-edit">
+                                            <h4>Upravit skupinu</h4>
+                                            <form method="POST" class="edit-form">
+                                                <input type="hidden" name="action" value="update">
+                                                <input type="hidden" name="group-id" value={group.id}>
+                                                <div class="form-group">
+                                                    <label for={`edit-name-${group.id}`}>Název:</label>
+                                                    <input type="text" id={`edit-name-${group.id}`} name="group-name" value={group.name}>
+                                                </div>
+                                                <button type="submit" class="btn btn-primary btn-small">Uložit změny</button>
+                                            </form>
+                                        </div>
+
+                                        <div class="group-members">
+                                            <h4>Členové skupiny</h4>
+                                            <div class="members-list" id={`members-list-${group.id}`}>
+                                                <p class="loading">Načítání členů...</p>
+                                            </div>
+
+                                            <div class="add-member">
+                                                <h4>Přidat člena</h4>
+                                                <form method="POST" class="add-member-form">
+                                                    <input type="hidden" name="action" value="add-member">
+                                                    <input type="hidden" name="group-id" value={group.id}>
+                                                    <div class="form-group">
+                                                        <select name="user-id" required>
+                                                            <option value="">-- Vyberte uživatele --</option>
+                                                            {allUsers.map((u) => (
+                                                                    <option value={u.id}>{u.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <button type="submit" class="btn btn-primary btn-small">Přidat</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                        ))}
+                    </div>
+                )}
+                </div>
+
+                <div class="tab-content" id="tab-member">
+                    <h2>Skupiny, ve kterých jsem členem</h2>
+                    {filteredMemberGroups.length === 0 ? (
+                            <p class="empty-list">Nejste členem žádné skupiny.</p>
+                    ) : (
+                            <div class="groups-container">
+                                {filteredMemberGroups.map((group) => (
+                                        <div class="group-card member-card">
+                                            <h3>{group.name}</h3>
+                                        </div>
+                                ))}
+                            </div>
+                    )}
+                </div>
+                </div>
+                </Layout>
+
+                <style>
+                    .container {
+                        max-width: 900px;
+                        margin: 0 auto;
+                        padding: 20px;
+                    }
+
+                    h1 {
+                        margin-bottom: 30px;
+                        text-align: center;
+                    }
+
+                    h2 {
+                        margin-bottom: 20px;
+                    }
+
+                    .card {
+                        background-color: #f9f9f9;
+                        padding: 25px;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                        margin-bottom: 30px;
+                    }
+
+                    .form-group {
+                        margin-bottom: 15px;
+                    }
+
+                    label {
+                        display: block;
+                        margin-bottom: 8px;
+                        font-weight: 500;
+                    }
+
+                    input[type="text"], select {
+                        width: 100%;
+                        padding: 12px;
+                        border: 1px solid #ddd;
+                        border-radius: 4px;
+                        box-sizing: border-box;
+                        font-size: 16px;
+                    }
+
+                    .form-actions {
+                        margin-top: 20px;
+                    }
+
+                    .btn {
+                        padding: 10px 20px;
+                        border-radius: 4px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        border: none;
+                        text-align: center;
+                        display: inline-block;
+                        text-decoration: none;
+                    }
+
+                    .btn-small {
+                        padding: 6px 12px;
+                        font-size: 14px;
+                    }
+
+                    .btn-primary {
+                        background-color: #4CAF50;
+                        color: white;
+                    }
+
+                    .btn-primary:hover {
+                        background-color: #45a049;
+                    }
+
+                    .btn-danger {
+                        background-color: #f44336;
+                        color: white;
+                    }
+
+                    .btn-danger:hover {
+                        background-color: #d32f2f;
+                    }
+
+                    .message {
+                        padding: 15px;
+                        margin: 20px 0;
+                        border-radius: 4px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+
+                    .success {
+                        background-color: #dff0d8;
+                        color: #3c763d;
+                        border: 1px solid #d6e9c6;
+                    }
+
+                    .error {
+                        background-color: #f2dede;
+                        color: #a94442;
+                        border: 1px solid #ebccd1;
+                    }
+
+                    .close-message {
+                        background: none;
+                        border: none;
+                        font-size: 20px;
+                        cursor: pointer;
+                        color: inherit;
+                    }
+
+                    .groups-container {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                        gap: 20px;
+                    }
+
+                    .group-card {
+                        background-color: white;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                        padding: 20px;
+                        transition: transform 0.2s, box-shadow 0.2s;
+                    }
+
+                    .group-card:hover {
+                        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+                    }
+
+                    .group-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 10px;
+                    }
+
+                    .group-header h3 {
+                        margin: 0;
+                    }
+
+                    .group-actions {
+                        display: flex;
+                        gap: 10px;
+                    }
+
+                    .delete-form {
+                        display: inline;
+                    }
+
+                    .group-details {
+                        margin-top: 15px;
+                        padding-top: 15px;
+                        border-top: 1px solid #eee;
+                    }
+
+                    .group-edit {
+                        margin-bottom: 20px;
+                    }
+
+                    h4 {
+                        margin-top: 0;
+                        margin-bottom: 10px;
+                        font-size: 16px;
+                        color: #555;
+                    }
+
+                    .empty-list {
+                        color: #666;
+                        font-style: italic;
+                        text-align: center;
+                        padding: 20px;
+                        background-color: #f9f9f9;
+                        border-radius: 8px;
+                    }
+
+                    .member-list {
+                        max-height: 200px;
+                        overflow-y: auto;
+                        margin: 10px 0;
+                        padding: 10px;
+                        border: 1px solid #eee;
+                        border-radius: 4px;
+                    }
+
+                    .member-item {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        padding: 8px;
+                        border-bottom: 1px solid #f0f0f0;
+                    }
+
+                    .member-item:last-child {
+                        border-bottom: none;
+                    }
+
+                    .tabs {
+                        display: flex;
+                        margin-bottom: 20px;
+                        border-bottom: 1px solid #ddd;
+                    }
+
+                    .tab-btn {
+                        padding: 10px 20px;
+                        background: none;
+                        border: none;
+                        cursor: pointer;
+                        font-size: 16px;
+                        font-weight: 500;
+                        color: #666;
+                        border-bottom: 3px solid transparent;
+                    }
+
+                    .tab-btn.active {
+                        color: #4CAF50;
+                        border-bottom-color: #4CAF50;
+                    }
+
+                    .tab-content {
+                        display: none;
+                    }
+
+                    .tab-content.active {
+                        display: block;
+                    }
+
+                    .loading {
+                        text-align: center;
+                        font-style: italic;
+                        color: #666;
+                    }
+                </style>
+
+                <script>
+                    // Přepínání záložek
+                    document.querySelectorAll('.tab-btn').forEach(button => {
+                        button.addEventListener('click', () => {
+                            // Odstranění aktivní třídy ze všech tlačítek a obsahu
+                            document.querySelectorAll('.tab-btn').forEach(btn => {
+                                btn.classList.remove('active');
+                            });
+                            document.querySelectorAll('.tab-content').forEach(content => {
+                                content.classList.remove('active');
+                            });
+
+                            // Přidání aktivní třídy vybranému tlačítku a obsahu
+                            button.classList.add('active');
+                            const tabId = `tab-${button.dataset.tab}`;
+                            document.getElementById(tabId).classList.add('active');
+                        });
+                    });
+
+                    // Správa skupin - rozbalení/sbalení detailů
+                    document.querySelectorAll('.edit-group-btn').forEach(button => {
+                        button.addEventListener('click', async () => {
+                            const groupId = button.dataset.groupId;
+                            const detailsDiv = document.getElementById(`group-details-${groupId}`);
+                            const membersListDiv = document.getElementById(`members-list-${groupId}`);
+
+                            // Přepnutí zobrazení detailů
+                            if (detailsDiv.style.display === 'none') {
+                                detailsDiv.style.display = 'block';
+
+                                // Načtení členů skupiny
+                                try {
+                                    const response = await fetch(`/api/group-members?group_id=${groupId}`);
+                                    if (response.ok) {
+                                        const data = await response.json();
+                                        renderMembers(membersListDiv, data.members, groupId);
+                                    } else {
+                                        membersListDiv.innerHTML = '<p class="error">Nepodařilo se načíst členy skupiny.</p>';
+                                    }
+                                } catch (error) {
+                                    membersListDiv.innerHTML = '<p class="error">Chyba při načítání členů skupiny.</p>';
+                                    console.error('Chyba při načítání členů skupiny:', error);
+                                }
+                            } else {
+                                detailsDiv.style.display = 'none';
+                            }
+                        });
+                    });
+
+                    // Vykreslení členů skupiny
+                    function renderMembers(container, members, groupId) {
+                        if (!members || members.length === 0) {
+                            container.innerHTML = '<p>Tato skupina nemá žádné členy.</p>';
+                            return;
+                        }
+
+                        let html = '<div class="member-list">';
+                        members.forEach(member => {
+                            html += `
+                <div class="member-item">
+                    <span>${member.name} ${member.administrator === 1 ? '(admin)' : ''} ${member.organizator === 1 ? '(organizátor)' : ''}</span>
+                    <form method="POST" class="remove-member-form">
+                        <input type="hidden" name="action" value="remove-member">
+                        <input type="hidden" name="group-id" value="${groupId}">
+                        <input type="hidden" name="user-id" value="${member.id}">
+                        <button type="submit" class="btn btn-small btn-danger">Odebrat</button>
+                    </form>
+                </div>
+            `;
+                        });
+                        html += '</div>';
+                        container.innerHTML = html;
+                    }
+
+                    // Zavření zpráv
+                    document.querySelectorAll('.close-message').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            btn.closest('.message').style.display = 'none';
+                        });
+                    });
+
+                    // Potvrzení před smazáním
+                    document.querySelectorAll('[data-confirm]').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            if (!confirm(btn.getAttribute('data-confirm'))) {
+                                e.preventDefault();
+                            }
+                        });
+                    });
+                    </script>

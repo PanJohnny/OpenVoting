@@ -1,0 +1,1039 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import {UserModel} from "../../util/users";
+import {PollModel} from "../../util/polls";
+import {GroupModel} from "../../util/groups";
+import {PollOptionModel} from "../../util/poll_options";
+import {GroupMembershipModel} from "../../util/group_memberships";
+
+// Kontrola oprávnění
+const user = await Astro.session?.get("user");
+if (!user || !user.administrator) {
+    return Astro.redirect("/");
+}
+
+let usedPass;
+// Generování náhodného hesla
+function generateRandomPassword(length = 16) {
+    const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
+    let password = "";
+    for (let i = 0; i < length; i++) {
+        password += charset[Math.floor(Math.random() * charset.length)];
+    }
+    usedPass = password;
+    return password;
+}
+
+// Zpracování formulářů
+let message = "";
+let messageType = "";
+
+if (Astro.request.method === "POST") {
+    const formData = await Astro.request.formData();
+    const action = formData.get("action");
+
+    try {
+        // Přidání uživatele
+        if (action === "add-user") {
+            const username = formData.get("username");
+            const password = formData.get("password") || generateRandomPassword();
+            const isOrganizator = formData.get("organizator") === "on";
+            const isAdministrator = formData.get("administrator") === "on";
+
+            await UserModel.create({
+                name: username,
+                password,
+                organizator: isOrganizator,
+                administrator: isAdministrator
+            });
+            message = `Uživatel ${username} byl úspěšně vytvořen`;
+            if (usedPass) {
+                message += ` s heslem: ${usedPass}`;
+            }
+            messageType = "success";
+        }
+        // Úprava uživatele
+        else if (action === "edit-user") {
+            const userId = parseInt(formData.get("user-id"));
+            const username = formData.get("username");
+            const isOrganizator = formData.get("organizator") === "on";
+            const isAdministrator = formData.get("administrator") === "on";
+
+            await UserModel.update(userId, {
+                name: username,
+                organizator: isOrganizator,
+                administrator: isAdministrator
+            });
+            message = `Uživatel byl úspěšně aktualizován`;
+            messageType = "success";
+        }
+        // Smazání uživatele
+        else if (action === "delete-user") {
+            const userId = parseInt(formData.get("user-id"));
+            await UserModel.delete(userId);
+            message = "Uživatel byl úspěšně smazán";
+            messageType = "success";
+        }
+        // Přidání ankety
+        else if (action === "add-poll") {
+            const pollName = formData.get("poll-name");
+            const expiresStr = formData.get("poll-expires");
+            const expires = expiresStr ? new Date(expiresStr) : null;
+            const isAnonymous = formData.get("poll-anonymous") === "on";
+            const groupId = formData.get("poll-group");
+            const maxOptions = parseInt(formData.get("poll-max-options")) || 1;
+
+            const poll = await PollModel.create({
+                name: pollName,
+                owner_id: user.id,
+                expires,
+                anonymous: isAnonymous,
+                group_id: groupId !== "null" ? parseInt(groupId) : null,
+                max_options: maxOptions
+            });
+
+            // Přidání možností
+            const optionsCount = parseInt(formData.get("options-count")) || 2;
+            for (let i = 1; i <= optionsCount; i++) {
+                const optionContent = formData.get(`option-${i}`);
+                if (optionContent) {
+                    await PollOptionModel.create({
+                        poll_id: poll.id,
+                        content: optionContent,
+                        option_order: i - 1
+                    });
+                }
+            }
+
+            message = "Anketa byla úspěšně vytvořena";
+            messageType = "success";
+        }
+        // Smazání ankety
+        else if (action === "delete-poll") {
+            const pollId = parseInt(formData.get("poll-id"));
+            await PollModel.delete(pollId);
+            message = "Anketa byla úspěšně smazána";
+            messageType = "success";
+        }
+        // Přidání skupiny
+        else if (action === "add-group") {
+            const groupName = formData.get("group-name");
+            await GroupModel.create({
+                name: groupName,
+                owner_id: user.id
+            });
+            message = "Skupina byla úspěšně vytvořena";
+            messageType = "success";
+        }
+        // Smazání skupiny
+        else if (action === "delete-group") {
+            const groupId = parseInt(formData.get("group-id"));
+            await GroupModel.delete(groupId);
+            message = "Skupina byla úspěšně smazána";
+            messageType = "success";
+        }
+    } catch (error) {
+        message = `Chyba: ${error.message}`;
+        messageType = "error";
+    }
+
+    // Obnovení dat po akci
+    if (messageType === "success") {
+        const users = await UserModel.getAll();
+        const polls = await PollModel.getAll();
+        const groups = await GroupModel.getAll();
+    }
+}
+
+// Získání dat
+const users = await UserModel.getAll();
+const polls = await PollModel.getAll();
+const groups = await GroupModel.getAll();
+
+// Získání detailů k anketám
+const pollsWithDetails = await Promise.all(polls.map(async (poll) => {
+    const options = await PollOptionModel.getByPollId(poll.id);
+    const owner = await UserModel.getById(poll.owner_id);
+    let group = null;
+    if (poll.group_id) {
+        group = await GroupModel.getById(poll.group_id);
+    }
+    return {...poll, options, owner, group};
+}));
+
+// Získání detailů ke skupinám
+const groupsWithDetails = await Promise.all(groups.map(async (group) => {
+    const owner = await UserModel.getById(group.owner_id);
+    const members = await GroupMembershipModel.getMembersByGroupId(group.id);
+    return {...group, owner, members};
+}));
+---
+
+<Layout title="Administrace OpenVoting">
+    <div class="admin-container">
+        <header>
+            <h1>Administrátorský panel OpenVoting</h1>
+            <div class="user-info">
+                <p>Přihlášen jako: <strong>{user.name}</strong></p>
+                <a href="/" class="btn btn-small">Domů</a>
+                <button id="logout-btn" class="btn btn-small btn-danger">Odhlásit se</button>
+            </div>
+        </header>
+
+        {message && (
+                <div class={`message ${messageType}`}>
+                    <p>{message}</p>
+                    <button class="close-message">&times;</button>
+                </div>
+        )}
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="users">Uživatelé</button>
+            <button class="tab-btn" data-tab="polls">Ankety</button>
+            <button class="tab-btn" data-tab="groups">Skupiny</button>
+        </nav>
+
+        <main class="admin-content">
+            <!-- Panel s uživateli -->
+            <section id="users" class="tab-content active">
+                <div class="section-header">
+                    <h2>Správa uživatelů</h2>
+                    <button class="btn" id="show-add-user">Přidat uživatele</button>
+                </div>
+
+                <!-- Formulář pro přidání uživatele -->
+                <div id="add-user-form" class="form-container hidden">
+                    <form method="POST">
+                        <input type="hidden" name="action" value="add-user">
+                        <h3>Přidat nového uživatele</h3>
+                        <div class="form-group">
+                            <label for="username">Uživatelské jméno:</label>
+                            <input type="text" id="username" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Heslo (nechte prázdné pro náhodné):</label>
+                            <input type="text" id="password" name="password">
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" name="organizator">
+                                Oprávnění organizátor
+                            </label>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" name="administrator">
+                                Oprávnění administrátor
+                            </label>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn">Vytvořit uživatele</button>
+                            <button type="button" class="btn btn-secondary cancel-form">Zrušit</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Tabulka uživatelů -->
+                <div class="table-container">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Jméno</th>
+                            <th>Organizátor</th>
+                            <th>Administrátor</th>
+                            <th>Vytvořen</th>
+                            <th>Akce</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {users.map((user) => (
+                                <tr>
+                                    <td>{user.id}</td>
+                                    <td>{user.name}</td>
+                                    <td>{user.organizator ? "Ano" : "Ne"}</td>
+                                    <td>{user.administrator ? "Ano" : "Ne"}</td>
+                                    <td>{new Date(user.created_at).toLocaleString()}</td>
+                                    <td class="actions">
+                                        <button class="btn-icon edit-user" data-id={user.id} data-name={user.name}
+                                                data-organizator={user.organizator}
+                                                data-administrator={user.administrator}>
+                                            <span class="material-icons">edit</span>
+                                        </button>
+                                        <button class="btn-icon delete-user" data-id={user.id} data-name={user.name}>
+                                            <span class="material-icons">delete</span>
+                                        </button>
+                                    </td>
+                                </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Panel s anketami -->
+            <section id="polls" class="tab-content">
+                <div class="section-header">
+                    <h2>Správa anket</h2>
+                    <button class="btn" id="show-add-poll">Přidat anketu</button>
+                </div>
+
+                <!-- Formulář pro přidání ankety -->
+                <div id="add-poll-form" class="form-container hidden">
+                    <form method="POST">
+                        <input type="hidden" name="action" value="add-poll">
+                        <h3>Přidat novou anketu</h3>
+                        <div class="form-group">
+                            <label for="poll-name">Název ankety:</label>
+                            <input type="text" id="poll-name" name="poll-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="poll-expires">Končí (nechte prázdné pro neomezeně):</label>
+                            <input type="datetime-local" id="poll-expires" name="poll-expires">
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label>
+                                <input type="checkbox" name="poll-anonymous" id="poll-anonymous">
+                                Anonymní hlasování
+                            </label>
+                        </div>
+                        <div class="form-group" id="group-selection">
+                            <label for="poll-group">Skupina (pouze pro neanonymní hlasování):</label>
+                            <select id="poll-group" name="poll-group">
+                                <option value="null">-- Bez skupiny --</option>
+                                {groups.map((group) => (
+                                        <option value={group.id}>{group.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="poll-max-options">Maximální počet voleb:</label>
+                            <input type="number" id="poll-max-options" name="poll-max-options" value="1" min="1">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Možnosti hlasování:</label>
+                            <input type="hidden" name="options-count" id="options-count" value="2">
+                            <div id="options-container">
+                                <div class="option-row">
+                                    <input type="text" name="option-1" placeholder="Možnost 1" required>
+                                </div>
+                                <div class="option-row">
+                                    <input type="text" name="option-2" placeholder="Možnost 2" required>
+                                </div>
+                            </div>
+                            <button type="button" id="add-option" class="btn btn-small">+ Přidat možnost</button>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn">Vytvořit anketu</button>
+                            <button type="button" class="btn btn-secondary cancel-form">Zrušit</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Seznam anket -->
+                <div class="polls-grid">
+                    {pollsWithDetails.map((poll) => (
+                            <div class="poll-card">
+                                <div class="poll-header">
+                                    <h3>{poll.name}</h3>
+                                    <div class="poll-actions">
+                                        <button class="btn-icon view-poll" data-id={poll.id}>
+                                            <span class="material-icons">visibility</span>
+                                        </button>
+                                        <button class="btn-icon delete-poll" data-id={poll.id} data-name={poll.name}>
+                                            <span class="material-icons">delete</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="poll-details">
+                                    <p><strong>Vytvořil:</strong> {poll.owner?.name || "Neznámý"}</p>
+                                    <p><strong>Typ:</strong> {poll.anonymous ? "Anonymní" : "Neanonymní"}</p>
+                                    <p><strong>Max. výběrů:</strong> {poll.max_options || "Neomezeno"}</p>
+                                    {poll.expires &&
+                                            <p><strong>Končí:</strong> {new Date(poll.expires).toLocaleString()}</p>}
+                                    {poll.group && <p><strong>Skupina:</strong> {poll.group.name}</p>}
+
+                                    <div class="poll-options">
+                                        <strong>Možnosti:</strong>
+                                        <ul>
+                                            {poll.options.map((option) => (
+                                                    <li>{option.content}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        </div>
+                        </section>
+
+                        <!-- Panel se skupinami -->
+                        <section id="groups" class="tab-content">
+                            <div class="section-header">
+                                <h2>Správa skupin</h2>
+                                <button class="btn" id="show-add-group">Přidat skupinu</button>
+                            </div>
+
+                            <!-- Formulář pro přidání skupiny -->
+                            <div id="add-group-form" class="form-container hidden">
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="add-group">
+                                    <h3>Přidat novou skupinu</h3>
+                                    <div class="form-group">
+                                        <label for="group-name">Název skupiny:</label>
+                                        <input type="text" id="group-name" name="group-name" required>
+                                    </div>
+                                    <div class="form-actions">
+                                        <button type="submit" class="btn">Vytvořit skupinu</button>
+                                        <button type="button" class="btn btn-secondary cancel-form">Zrušit</button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <!-- Seznam skupin -->
+                            <div class="groups-grid">
+                                {groupsWithDetails.map((group) => (
+                                        <div class="group-card">
+                                            <div class="group-header">
+                                                <h3>{group.name}</h3>
+                                                <div class="group-actions">
+                                                    <button class="btn-icon delete-group" data-id={group.id}
+                                                            data-name={group.name}>
+                                                        <span class="material-icons">delete</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="group-details">
+                                                <p><strong>Vlastník:</strong> {group.owner?.name || "Neznámý"}</p>
+                                                <p>
+                                                    <strong>Vytvořeno:</strong> {new Date(group.created_at).toLocaleString()}
+                                                </p>
+
+                                                <div class="group-members">
+                                                    <strong>Členové ({group.members?.length || 0}):</strong>
+                                                    {group.members?.length > 0 ? (
+                                                            <ul>
+                                                                {group.members.map((member) => (
+                                                                        <li>{member.name}</li>
+                                                                ))}
+                                                            </ul>
+                                                    ) : (
+                                                            <p class="no-data">Žádní členové</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                ))}
+                            </div>
+                        </section>
+                        </main>
+                        </div>
+
+                        <!-- Modální okno pro úpravu uživatele -->
+                        <div id="edit-user-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close">&times;</span>
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="edit-user">
+                                    <input type="hidden" name="user-id" id="edit-user-id">
+                                    <h3>Úprava uživatele</h3>
+                                    <div class="form-group">
+                                        <label for="edit-username">Uživatelské jméno:</label>
+                                        <input type="text" id="edit-username" name="username" required>
+                                    </div>
+                                    <div class="form-group checkbox-group">
+                                        <label>
+                                            <input type="checkbox" id="edit-organizator" name="organizator">
+                                            Oprávnění organizátor
+                                        </label>
+                                    </div>
+                                    <div class="form-group checkbox-group">
+                                        <label>
+                                            <input type="checkbox" id="edit-administrator" name="administrator">
+                                            Oprávnění administrátor
+                                        </label>
+                                    </div>
+                                    <div class="form-actions">
+                                        <button type="submit" class="btn">Uložit změny</button>
+                                        <button type="button" class="btn btn-secondary close-modal">Zrušit</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Modální okno pro smazání uživatele -->
+                        <div id="delete-user-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close">&times;</span>
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="delete-user">
+                                    <input type="hidden" name="user-id" id="delete-user-id">
+                                    <h3>Smazat uživatele</h3>
+                                    <p>Opravdu chcete smazat uživatele <strong id="delete-user-name"></strong>?</p>
+                                    <div class="form-actions">
+                                        <button type="submit" class="btn btn-danger">Smazat</button>
+                                        <button type="button" class="btn btn-secondary close-modal">Zrušit</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Modální okno pro smazání ankety -->
+                        <div id="delete-poll-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close">&times;</span>
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="delete-poll">
+                                    <input type="hidden" name="poll-id" id="delete-poll-id">
+                                    <h3>Smazat anketu</h3>
+                                    <p>Opravdu chcete smazat anketu <strong id="delete-poll-name"></strong>?</p>
+                                    <div class="form-actions">
+                                        <button type="submit" class="btn btn-danger">Smazat</button>
+                                        <button type="button" class="btn btn-secondary close-modal">Zrušit</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Modální okno pro smazání skupiny -->
+                        <div id="delete-group-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close">&times;</span>
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="delete-group">
+                                    <input type="hidden" name="group-id" id="delete-group-id">
+                                    <h3>Smazat skupinu</h3>
+                                    <p>Opravdu chcete smazat skupinu <strong id="delete-group-name"></strong>?</p>
+                                    <div class="form-actions">
+                                        <button type="submit" class="btn btn-danger">Smazat</button>
+                                        <button type="button" class="btn btn-secondary close-modal">Zrušit</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                        </Layout>
+
+                        <style>
+                            /* Grid Layout a základní styly */
+                            .admin-container {
+                                display: grid;
+                                grid-template-areas:
+            "header header"
+            "tabs tabs"
+            "content content";
+                                grid-template-rows: auto auto 1fr;
+                                min-height: calc(100vh - 40px);
+                                padding: 20px;
+                                max-width: 1400px;
+                                margin: 0 auto;
+                            }
+
+                            header {
+                                grid-area: header;
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                margin-bottom: 20px;
+                                padding-bottom: 10px;
+                                border-bottom: 1px solid #ddd;
+                            }
+
+                            .user-info {
+                                display: flex;
+                                align-items: center;
+                                gap: 10px;
+                            }
+
+                            .tabs {
+                                grid-area: tabs;
+                                display: flex;
+                                gap: 10px;
+                                margin-bottom: 20px;
+                            }
+
+                            .admin-content {
+                                grid-area: content;
+                            }
+
+                            /* Záložky */
+                            .tab-btn {
+                                padding: 10px 20px;
+                                background-color: #f0f0f0;
+                                border: 1px solid #ddd;
+                                border-bottom: none;
+                                border-radius: 5px 5px 0 0;
+                                cursor: pointer;
+                                font-size: 16px;
+                                transition: all 0.2s;
+                            }
+
+                            .tab-btn.active {
+                                background-color: #fff;
+                                border-bottom: 3px solid #4CAF50;
+                                font-weight: bold;
+                            }
+
+                            .tab-content {
+                                display: none;
+                                padding: 20px;
+                                background-color: #fff;
+                                border-radius: 5px;
+                                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                            }
+
+                            .tab-content.active {
+                                display: block;
+                            }
+
+                            /* Hlavička sekce */
+                            .section-header {
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                margin-bottom: 20px;
+                            }
+
+                            /* Tabulky */
+                            .table-container {
+                                overflow-x: auto;
+                            }
+
+                            table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin-bottom: 20px;
+                            }
+
+                            th, td {
+                                padding: 12px 15px;
+                                text-align: left;
+                                border-bottom: 1px solid #ddd;
+                            }
+
+                            thead tr {
+                                background-color: #f8f8f8;
+                                border-bottom: 2px solid #ddd;
+                            }
+
+                            tbody tr:hover {
+                                background-color: #f5f5f5;
+                            }
+
+                            .actions {
+                                white-space: nowrap;
+                                text-align: right;
+                            }
+
+                            /* Grid pro ankety a skupiny */
+                            .polls-grid, .groups-grid {
+                                display: grid;
+                                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                                gap: 20px;
+                            }
+
+                            .poll-card, .group-card {
+                                background-color: #fff;
+                                border-radius: 5px;
+                                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+                                padding: 15px;
+                                transition: transform 0.2s;
+                            }
+
+                            .poll-card:hover, .group-card:hover {
+                                transform: translateY(-5px);
+                                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+                            }
+
+                            .poll-header, .group-header {
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                margin-bottom: 10px;
+                                padding-bottom: 10px;
+                                border-bottom: 1px solid #eee;
+                            }
+
+                            .poll-details, .group-details {
+                                font-size: 14px;
+                            }
+
+                            .poll-details p, .group-details p {
+                                margin: 5px 0;
+                            }
+
+                            .poll-options ul, .group-members ul {
+                                padding-left: 20px;
+                                margin: 5px 0;
+                            }
+
+                            /* Formuláře */
+                            .form-container {
+                                background-color: #f9f9f9;
+                                border-radius: 5px;
+                                padding: 20px;
+                                margin-bottom: 20px;
+                                box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+                            }
+
+                            .form-container.hidden {
+                                display: none;
+                            }
+
+                            .form-group {
+                                margin-bottom: 15px;
+                            }
+
+                            .form-group label {
+                                display: block;
+                                margin-bottom: 5px;
+                                font-weight: bold;
+                            }
+
+                            .checkbox-group {
+                                display: flex;
+                                align-items: center;
+                            }
+
+                            .checkbox-group label {
+                                margin-bottom: 0;
+                                margin-left: 5px;
+                                font-weight: normal;
+                            }
+
+                            .form-actions {
+                                display: flex;
+                                gap: 10px;
+                                margin-top: 20px;
+                            }
+
+                            /* Pole pro možnosti */
+                            .option-row {
+                                margin-bottom: 10px;
+                            }
+
+                            #options-container {
+                                margin-bottom: 10px;
+                            }
+
+                            /* Tlačítka */
+                            .btn {
+                                padding: 10px 15px;
+                                background-color: #4CAF50;
+                                color: white;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                font-size: 14px;
+                            }
+
+                            .btn:hover {
+                                background-color: #45a049;
+                            }
+
+                            .btn-secondary {
+                                background-color: #f0f0f0;
+                                color: #333;
+                                border: 1px solid #ddd;
+                            }
+
+                            .btn-secondary:hover {
+                                background-color: #e0e0e0;
+                            }
+
+                            .btn-danger {
+                                background-color: #f44336;
+                            }
+
+                            .btn-danger:hover {
+                                background-color: #d32f2f;
+                            }
+
+                            .btn-small {
+                                padding: 5px 10px;
+                                font-size: 12px;
+                            }
+
+                            .btn-icon {
+                                background: none;
+                                border: none;
+                                color: #555;
+                                cursor: pointer;
+                                padding: 5px;
+                                margin: 0 2px;
+                                border-radius: 50%;
+                                display: inline-flex;
+                                align-items: center;
+                                justify-content: center;
+                            }
+
+                            .btn-icon:hover {
+                                background-color: #f0f0f0;
+                                color: #000;
+                            }
+
+                            /* Modální okna */
+                            .modal {
+                                display: none;
+                                position: fixed;
+                                z-index: 1000;
+                                left: 0;
+                                top: 0;
+                                width: 100%;
+                                height: 100%;
+                                background-color: rgba(0, 0, 0, 0.5);
+                            }
+
+                            .modal-content {
+                                background-color: #fff;
+                                margin: 10% auto;
+                                padding: 20px;
+                                border-radius: 5px;
+                                width: 50%;
+                                max-width: 500px;
+                                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+                                position: relative;
+                            }
+
+                            .close {
+                                position: absolute;
+                                right: 15px;
+                                top: 10px;
+                                font-size: 24px;
+                                font-weight: bold;
+                                cursor: pointer;
+                            }
+
+                            /* Zprávy */
+                            .message {
+                                padding: 10px 15px;
+                                margin-bottom: 20px;
+                                border-radius: 4px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: space-between;
+                            }
+
+                            .success {
+                                background-color: #dff0d8;
+                                color: #3c763d;
+                                border: 1px solid #d6e9c6;
+                            }
+
+                            .error {
+                                background-color: #f2dede;
+                                color: #a94442;
+                                border: 1px solid #ebccd1;
+                            }
+
+                            .close-message {
+                                background: none;
+                                border: none;
+                                font-size: 20px;
+                                cursor: pointer;
+                                color: inherit;
+                            }
+
+                            /* Responzivní design */
+                            @media (max-width: 768px) {
+                                .polls-grid, .groups-grid {
+                                    grid-template-columns: 1fr;
+                                }
+
+                                .modal-content {
+                                    width: 90%;
+                                }
+                            }
+
+                            /* Formulářové prvky */
+                            input[type="text"],
+                            input[type="password"],
+                            input[type="number"],
+                            input[type="datetime-local"],
+                            select {
+                                width: 100%;
+                                padding: 10px;
+                                margin-top: 5px;
+                                border: 1px solid #ddd;
+                                border-radius: 4px;
+                                box-sizing: border-box;
+                            }
+
+                            /* Materiální ikony */
+                            .material-icons {
+                                font-size: 18px;
+                                line-height: 1;
+                            }
+
+                            .no-data {
+                                color: #777;
+                                font-style: italic;
+                            }
+                        </style>
+
+                        <script>
+                            // Přepínání záložek
+                            const tabButtons = document.querySelectorAll('.tab-btn');
+                            const tabContents = document.querySelectorAll('.tab-content');
+
+                            tabButtons.forEach(button => {
+                                button.addEventListener('click', () => {
+                                    const tabName = button.getAttribute('data-tab');
+
+                                    // Deaktivace všech záložek
+                                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                                    tabContents.forEach(content => content.classList.remove('active'));
+
+                                    // Aktivace vybrané záložky
+                                    button.classList.add('active');
+                                    document.getElementById(tabName).classList.add('active');
+                                });
+                            });
+
+                            // Zobrazení/skrytí formulářů
+                            document.getElementById('show-add-user').addEventListener('click', () => {
+                                document.getElementById('add-user-form').classList.toggle('hidden');
+                            });
+
+                            document.getElementById('show-add-poll').addEventListener('click', () => {
+                                document.getElementById('add-poll-form').classList.toggle('hidden');
+                            });
+
+                            document.getElementById('show-add-group').addEventListener('click', () => {
+                                document.getElementById('add-group-form').classList.toggle('hidden');
+                            });
+
+                            // Zrušení formulářů
+                            document.querySelectorAll('.cancel-form').forEach(button => {
+                                button.addEventListener('click', () => {
+                                    const form = button.closest('.form-container');
+                                    form.classList.add('hidden');
+                                    form.querySelector('form').reset();
+                                });
+                            });
+
+                            // Modální okna pro úpravy uživatelů
+                            const editUserBtns = document.querySelectorAll('.edit-user');
+                            const editUserModal = document.getElementById('edit-user-modal');
+
+                            editUserBtns.forEach(btn => {
+                                btn.addEventListener('click', () => {
+                                    const userId = btn.getAttribute('data-id');
+                                    const username = btn.getAttribute('data-name');
+                                    const isOrganizator = btn.getAttribute('data-organizator') === 'true';
+                                    const isAdministrator = btn.getAttribute('data-administrator') === 'true';
+
+                                    document.getElementById('edit-user-id').value = userId;
+                                    document.getElementById('edit-username').value = username;
+                                    document.getElementById('edit-organizator').checked = isOrganizator;
+                                    document.getElementById('edit-administrator').checked = isAdministrator;
+
+                                    editUserModal.style.display = 'block';
+                                });
+                            });
+
+                            // Modální okna pro mazání
+                            const deleteUserBtns = document.querySelectorAll('.delete-user');
+                            const deletePollBtns = document.querySelectorAll('.delete-poll');
+                            const deleteGroupBtns = document.querySelectorAll('.delete-group');
+
+                            deleteUserBtns.forEach(btn => {
+                                btn.addEventListener('click', () => {
+                                    const userId = btn.getAttribute('data-id');
+                                    const username = btn.getAttribute('data-name');
+
+                                    document.getElementById('delete-user-id').value = userId;
+                                    document.getElementById('delete-user-name').textContent = username;
+
+                                    document.getElementById('delete-user-modal').style.display = 'block';
+                                });
+                            });
+
+                            deletePollBtns.forEach(btn => {
+                                btn.addEventListener('click', () => {
+                                    const pollId = btn.getAttribute('data-id');
+                                    const pollName = btn.getAttribute('data-name');
+
+                                    document.getElementById('delete-poll-id').value = pollId;
+                                    document.getElementById('delete-poll-name').textContent = pollName;
+
+                                    document.getElementById('delete-poll-modal').style.display = 'block';
+                                });
+                            });
+
+                            deleteGroupBtns.forEach(btn => {
+                                btn.addEventListener('click', () => {
+                                    const groupId = btn.getAttribute('data-id');
+                                    const groupName = btn.getAttribute('data-name');
+
+                                    document.getElementById('delete-group-id').value = groupId;
+                                    document.getElementById('delete-group-name').textContent = groupName;
+
+                                    document.getElementById('delete-group-modal').style.display = 'block';
+                                });
+                            });
+
+                            // Zavření modálních oken
+                            document.querySelectorAll('.close, .close-modal').forEach(element => {
+                                element.addEventListener('click', () => {
+                                    document.querySelectorAll('.modal').forEach(modal => {
+                                        modal.style.display = 'none';
+                                    });
+                                });
+                            });
+
+                            // Zavírání modálních oken kliknutím mimo obsah
+                            window.addEventListener('click', (event) => {
+                                document.querySelectorAll('.modal').forEach(modal => {
+                                    if (event.target === modal) {
+                                        modal.style.display = 'none';
+                                    }
+                                });
+                            });
+
+                            // Zavření zpráv
+                            document.querySelectorAll('.close-message').forEach(btn => {
+                                btn.addEventListener('click', () => {
+                                    btn.closest('.message').style.display = 'none';
+                                });
+                            });
+
+                            // Dynamické přidávání možností k anketě
+                            let optionCounter = 2; // Začínáme s dvěma možnostmi
+
+                            document.getElementById('add-option').addEventListener('click', () => {
+                                optionCounter++;
+                                const optionsContainer = document.getElementById('options-container');
+                                const newOption = document.createElement('div');
+                                newOption.className = 'option-row';
+                                newOption.innerHTML = `<input type="text" name="option-${optionCounter}" placeholder="Možnost ${optionCounter}" required>`;
+                                optionsContainer.appendChild(newOption);
+                                document.getElementById('options-count').value = optionCounter;
+                            });
+
+                            // Podmíněné skrývání skupiny pro anonymní ankety
+                            const anonymousCheckbox = document.getElementById('poll-anonymous');
+                            const groupSelection = document.getElementById('group-selection');
+
+                            anonymousCheckbox.addEventListener('change', () => {
+                                if (anonymousCheckbox.checked) {
+                                    groupSelection.style.display = 'none';
+                                    document.getElementById('poll-group').value = 'null';
+                                } else {
+                                    groupSelection.style.display = 'block';
+                                }
+                            });
+
+                            // Odhlášení uživatele
+                            document.getElementById('logout-btn').addEventListener('click', async () => {
+                                try {
+                                    const response = await fetch('/api/auth/logout', {method: 'POST'});
+                                    if (response.ok) {
+                                        window.location.href = '/';
+                                    }
+                                } catch (error) {
+                                    console.error('Chyba při odhlášení:', error);
+                                }
+                            });
+                            </script>

@@ -1,16 +1,264 @@
 ---
+import Layout from "../layouts/Layout.astro";
+import {UserModel} from "../util/users"
+import {PollModel} from "../util/polls";
+import { GroupMembershipModel } from "../util/group_memberships";
 
+if (await UserModel.isEmpty()) {
+	return Astro.redirect("/admin/welcome");
+}
+
+// Načtení všech anket
+const allPolls = await PollModel.getAll();
+
+// Rozdělení anket na probíhající a proběhlé
+const now = new Date();
+const activePolls = allPolls.filter(poll => {
+	return !poll.expires || new Date(poll.expires) > now;
+});
+
+if (Astro.session && await Astro.session.has("user")) {
+	let user = await Astro.session.get("user");
+	for (let o = 0; o < activePolls.length; o++) {
+		const poll = activePolls[o];
+		if (poll.group_id) {
+			const groupMembership = await GroupMembershipModel.isMember(user.id, poll.group_id);
+
+			// if the user can vote add voter: true
+			if (groupMembership) {
+				activePolls[o].voter = true;
+			}
+		}
+	}
+}
+
+const finishedPolls = allPolls.filter(poll => {
+	return poll.expires && new Date(poll.expires) <= now;
+});
+
+// Pomocná funkce pro formátování data
+function formatDate(dateString) {
+	if (!dateString) return "neurčeno";
+	const date = new Date(dateString);
+	return new Intl.DateTimeFormat("cs-CZ", {
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric",
+		hour: "2-digit",
+		minute: "2-digit"
+	}).format(date);
+}
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>
+<Layout title="OpenVoting">
+	<div class="container">
+		<div class="hero">
+			<h1>OpenVoting</h1>
+			<p class="subtitle">Opravdu otevřený hlasovací systém</p>
+		</div>
+
+		<section class="polls-section">
+			<h2>Aktuálně probíhající ankety</h2>
+			{activePolls.length === 0 ? (
+				<p class="no-polls">V současné době neprobíhá žádná anketa.</p>
+			) : (
+				<div class="polls-grid">
+					{activePolls.map((poll) => (
+						<div class="poll-card">
+							<h3>{poll.name}</h3>
+							<p class="poll-description">{poll.description}</p>
+							<div class="poll-meta">
+								<span>Vytvořeno: {formatDate(poll.created_at)}</span>
+								{poll.expires && <span>Končí: {formatDate(poll.expires)}</span>}
+								{poll.anonymous && <span class="poll-tag anonymous">Anonymní</span>}
+							</div>
+							<div class="poll-actions">
+								<a href={`/poll/results/${poll.id}`} class="btn btn-primary">Zobrazit anketu</a>
+								{
+									poll.voter && (
+										<a href={`/poll/vote/${poll.id}`} class="btn btn-primary">Hlasovat</a>
+									)
+								}
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+		</section>
+
+		<section class="polls-section">
+			<h2>Ukončené ankety</h2>
+			{finishedPolls.length === 0 ? (
+				<p class="no-polls">Zatím nebyly ukončeny žádné ankety.</p>
+			) : (
+				<div class="polls-grid">
+					{finishedPolls.map((poll) => (
+						<div class="poll-card finished">
+							<h3>{poll.name}</h3>
+							<p class="poll-description">{poll.description}</p>
+							<div class="poll-meta">
+								<span>Vytvořeno: {formatDate(poll.created_at)}</span>
+								<span>Ukončeno: {formatDate(poll.expires)}</span>
+								{poll.anonymous && <span class="poll-tag anonymous">Anonymní</span>}
+							</div>
+							<div class="poll-actions">
+								<a href={`/poll/results/${poll.id}`} class="btn btn-secondary">Zobrazit výsledky</a>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+		</section>
+	</div>
+</Layout>
+
+<style>
+	.container {
+		max-width: 1200px;
+		margin: 0 auto;
+		padding: 20px;
+	}
+
+	.hero {
+		text-align: center;
+		margin-bottom: 40px;
+	}
+
+	h1 {
+		font-size: 3rem;
+		margin-bottom: 0.5rem;
+		color: #333;
+	}
+
+	.subtitle {
+		font-size: 1.2rem;
+		color: #666;
+		margin-bottom: 2rem;
+	}
+
+	.polls-section {
+		margin-bottom: 40px;
+	}
+
+	h2 {
+		margin-bottom: 20px;
+		padding-bottom: 10px;
+		border-bottom: 1px solid #eee;
+		color: #333;
+	}
+
+	.no-polls {
+		color: #666;
+		font-style: italic;
+		text-align: center;
+		padding: 20px;
+		background-color: #f9f9f9;
+		border-radius: 8px;
+	}
+
+	.polls-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		gap: 20px;
+	}
+
+	.poll-card {
+		background-color: white;
+		border-radius: 8px;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+		padding: 20px;
+		transition: transform 0.2s, box-shadow 0.2s;
+	}
+
+	.poll-card:hover {
+		transform: translateY(-5px);
+		box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+	}
+
+	.poll-card.finished {
+		border-left: 3px solid #ccc;
+		opacity: 0.9;
+	}
+
+	.poll-card h3 {
+		margin-top: 0;
+		margin-bottom: 10px;
+		color: #333;
+	}
+
+	.poll-description {
+		color: #555;
+		margin-bottom: 15px;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.poll-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+		margin-bottom: 15px;
+		font-size: 14px;
+		color: #666;
+	}
+
+	.poll-tag {
+		display: inline-block;
+		padding: 2px 8px;
+		border-radius: 4px;
+		font-size: 12px;
+		font-weight: 500;
+		margin-top: 5px;
+		align-self: flex-start;
+	}
+
+	.anonymous {
+		background-color: #e8f5e9;
+		color: #2e7d32;
+	}
+
+	.poll-actions {
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	.btn {
+		padding: 8px 16px;
+		border-radius: 4px;
+		font-size: 14px;
+		cursor: pointer;
+		border: none;
+		text-decoration: none;
+		display: inline-block;
+		text-align: center;
+		font-weight: 500;
+		transition: all 0.2s;
+	}
+
+	.btn-primary {
+		background-color: #4CAF50;
+		color: white;
+	}
+
+	.btn-primary:hover {
+		background-color: #45a049;
+	}
+
+	.btn-secondary {
+		background-color: #f0f0f0;
+		color: #333;
+		border: 1px solid #ddd;
+	}
+
+	.btn-secondary:hover {
+		background-color: #e0e0e0;
+	}
+
+	@media (max-width: 768px) {
+		.polls-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

@@ -1,0 +1,349 @@
+---
+import Layout from "../../../layouts/Layout.astro";
+import { PollModel } from "../../../util/polls";
+import { PollOptionModel } from "../../../util/poll_options";
+import { PollVoteModel } from "../../../util/poll_votes";
+import { GroupMembershipModel } from "../../../util/group_memberships";
+
+// Kontrola přihlášení
+const user = await Astro.session?.get("user");
+if (!user) {
+    return Astro.redirect("/login?redirect=/poll/vote/" + Astro.params.id);
+}
+
+// Načtení ankety
+const pollId = parseInt(Astro.params.id);
+let poll = null;
+let options = [];
+let canVote = false;
+let hasVoted = false;
+let errorMessage = "";
+let successMessage = "";
+let voted = false;
+
+try {
+    // Načtení ankety a jejích možností
+    poll = await PollModel.getById(pollId);
+
+    if (!poll) {
+        errorMessage = "Anketa nebyla nalezena";
+    } else if (poll.expires && new Date(poll.expires) < new Date()) {
+        errorMessage = "Hlasování v této anketě již skončilo";
+    } else if (poll.anonymous) {
+        errorMessage = "Tato anketa je anonymní a má jiný způsob hlasování";
+    } else {
+        // Kontrola, zda uživatel patří do skupin s přístupem k anketě
+        const isInGroup = await GroupMembershipModel.isMember(user.id, poll.group_id);
+
+        if (!isInGroup) {
+            errorMessage = "Nemáte oprávnění hlasovat v této anketě";
+        } else {
+            options = await PollOptionModel.getByPollId(pollId);
+
+            // Kontrola, zda uživatel již nehlasoval
+            hasVoted = await PollVoteModel.hasUserVoted(pollId, user.id);
+
+            if (hasVoted) {
+                errorMessage = "V této anketě jste již hlasovali";
+            } else {
+                canVote = true;
+            }
+        }
+    }
+} catch (error) {
+    console.error("Chyba při načítání ankety:", error);
+    errorMessage = "Nastala neočekávaná chyba";
+}
+
+// Zpracování hlasování
+if (Astro.request.method === "POST" && canVote && poll) {
+    try {
+        const formData = await Astro.request.formData();
+        const selectedOptions = [];
+
+        // Zpracování vybraných možností
+        if (poll.max_options === 1) {
+            // Pro jednu možnost (radio button)
+            const optionId = parseInt(formData.get("option")?.toString() || "0");
+            if (optionId > 0) {
+                selectedOptions.push(optionId);
+            }
+        } else {
+            // Pro více možností (checkboxy)
+            for (const option of options) {
+                if (formData.get(`option-${option.id}`)) {
+                    selectedOptions.push(option.id);
+                }
+            }
+        }
+
+        if (selectedOptions.length === 0) {
+            errorMessage = "Vyberte alespoň jednu možnost";
+        } else if (selectedOptions.length > poll.max_options) {
+            errorMessage = `Můžete vybrat maximálně ${poll.max_options} možností`;
+        } else {
+            // Uložení hlasů - použití správné metody pro neanonymní hlasování
+            for (const optionId of selectedOptions) {
+                await PollVoteModel.createAuthenticated({
+                    poll_id: pollId,
+                    option_id: optionId,
+                    user_id: user.id
+                });
+            }
+
+            successMessage = "Váš hlas byl úspěšně zaznamenán";
+            voted = true;
+            canVote = false;
+        }
+    } catch (error) {
+        console.error("Chyba při hlasování:", error);
+        errorMessage = "Nastala neočekávaná chyba při hlasování";
+    }
+}
+---
+
+<Layout title={poll ? `Hlasování: ${poll.name}` : "Hlasování"}>
+    <div class="container">
+        {errorMessage && (
+                <div class="message error">
+                    <p>{errorMessage}</p>
+                    <button class="close-message">&times;</button>
+                </div>
+        )}
+
+        {successMessage && (
+                <div class="message success">
+                    <p>{successMessage}</p>
+                    <button class="close-message">&times;</button>
+                </div>
+        )}
+
+        {poll && (
+                <div class="poll-container">
+                    <h1>{poll.name}</h1>
+
+                    {poll.description && (
+                            <div class="poll-description">
+                                <p>{poll.description}</p>
+                            </div>
+                    )}
+
+                    {poll.expires && (
+                            <p class="poll-info">
+                                Hlasování končí: {new Date(poll.expires).toLocaleString('cs-CZ')}
+                            </p>
+                    )}
+
+                    {canVote && !voted && (
+                            <form method="POST" class="vote-form">
+                                <p class="vote-instruction" data-max-options={poll.max_options}>
+                                    Vyberte {poll.max_options === 1 ? "jednu možnost" :
+                                    poll.max_options === options.length ? "libovolný počet možností" :
+                                        `maximálně ${poll.max_options} možností`}:
+                                </p>
+
+                                <div class="options-container">
+                                    {options.map((option) => (
+                                            <div class="option">
+                                                <label class="option-label">
+                                                    <input
+                                                            type={poll.max_options === 1 ? "radio" : "checkbox"}
+                                                            name={poll.max_options === 1 ? "option" : `option-${option.id}`}
+                                                            value={option.id}
+                                                    />
+                                                    <span class="option-text">{option.content}</span>
+                                                </label>
+                                            </div>
+                                    ))}
+                                </div>
+
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">Hlasovat</button>
+                                </div>
+                            </form>
+                    )}
+
+                    {voted && (
+                            <div class="success-vote">
+                                <h2>Děkujeme za váš hlas</h2>
+                                <p>Váš hlas v anketě byl úspěšně zaznamenán.</p>
+                                <div class="nav-buttons">
+                                    <a href="/" class="btn btn-secondary">Hlavní stránka</a>
+                                    <a href="/poll/results/{pollId}" class="btn btn-primary">Zobrazit výsledky</a>
+                                </div>
+                            </div>
+                    )}
+                </div>
+        )}
+    </div>
+</Layout>
+
+<style>
+    .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    h1, h2 {
+        margin-bottom: 20px;
+        text-align: center;
+    }
+
+    .poll-container {
+        background-color: white;
+        padding: 25px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .poll-description {
+        margin-bottom: 20px;
+        color: #555;
+        text-align: center;
+    }
+
+    .poll-info {
+        color: #666;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .vote-instruction {
+        font-weight: bold;
+        margin-bottom: 15px;
+    }
+
+    .options-container {
+        margin-bottom: 25px;
+    }
+
+    .option {
+        margin-bottom: 12px;
+    }
+
+    .option-label {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        padding: 10px;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+    }
+
+    .option-label:hover {
+        background-color: #eaf5ea;
+    }
+
+    .option-text {
+        padding-left: 10px;
+    }
+
+    .form-actions {
+        display: flex;
+        justify-content: center;
+        margin-top: 30px;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border-radius: 4px;
+        font-size: 16px;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.2s;
+        text-decoration: none;
+    }
+
+    .btn-primary {
+        background-color: #4CAF50;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: #45a049;
+    }
+
+    .btn-secondary {
+        background-color: #f0f0f0;
+        color: #333;
+        border: 1px solid #ddd;
+        margin-right: 10px;
+    }
+
+    .btn-secondary:hover {
+        background-color: #e0e0e0;
+    }
+
+    .message {
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .success {
+        background-color: #dff0d8;
+        color: #3c763d;
+        border: 1px solid #d6e9c6;
+    }
+
+    .error {
+        background-color: #f2dede;
+        color: #a94442;
+        border: 1px solid #ebccd1;
+    }
+
+    .close-message {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        color: inherit;
+    }
+
+    .success-vote {
+        text-align: center;
+        padding: 20px 0;
+    }
+
+    .nav-buttons {
+        margin-top: 20px;
+        display: flex;
+        justify-content: center;
+    }
+</style>
+
+<script>
+    // Zavření zpráv
+    document.querySelectorAll('.close-message').forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.closest('.message').style.display = 'none';
+        });
+    });
+
+    // Kontrola maximálního počtu možností u checkboxů
+    const form = document.querySelector('.vote-form');
+    const voteInstruction = document.querySelector('.vote-instruction');
+
+    if (form && voteInstruction) {
+        const maxOptions = parseInt(voteInstruction.dataset.maxOptions || '1');
+
+        if (maxOptions > 1) {
+            const checkboxes = form.querySelectorAll('input[type="checkbox"]');
+
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    const checkedCount = form.querySelectorAll('input[type="checkbox"]:checked').length;
+
+                    if (checkedCount > maxOptions) {
+                        this.checked = false;
+                        alert(`Můžete vybrat maximálně ${maxOptions} možností.`);
+                    }
+                });
+            });
+        }
+    }
+</script>

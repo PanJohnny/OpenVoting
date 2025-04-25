@@ -1,0 +1,7 @@
+---
+if (Astro.session) {
+    Astro.session.destroy();
+}
+
+return Astro.redirect("/");
+---

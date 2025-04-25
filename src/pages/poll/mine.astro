@@ -1,0 +1,357 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { PollModel } from "../../util/polls";
+import { PollVoteModel } from "../../util/poll_votes";
+
+// Kontrola přihlášení uživatele
+const user = await Astro.session?.get("user");
+if (!user) {
+    return Astro.redirect("/login");
+}
+
+// Získání anket, ve kterých uživatel hlasoval
+const votedPolls = await PollVoteModel.getPollsVotedByUser(user.id);
+
+// Získání anket vytvořených uživatelem (pouze pro organizátory)
+let createdPolls = [];
+const isOrganizer = user.organizator;
+if (isOrganizer) {
+    createdPolls = await PollModel.getByOwnerId(user.id);
+}
+
+// Zpracování požadavku na smazání ankety
+let successMessage = "";
+let errorMessage = "";
+
+if (Astro.request.method === "POST") {
+    try {
+        const formData = await Astro.request.formData();
+        const action = formData.get("action")?.toString();
+        const pollId = formData.get("poll_id")?.toString();
+
+        if (action === "delete" && pollId && isOrganizer) {
+            const deletedPoll = await PollModel.deletePoll(pollId, user.id);
+            if (deletedPoll) {
+                successMessage = "Anketa byla úspěšně smazána.";
+                // Aktualizujeme seznam anket po smazání
+                createdPolls = await PollModel.getPollsByCreator(user.id);
+            } else {
+                errorMessage = "Anketu se nepodařilo smazat nebo k ní nemáte oprávnění.";
+            }
+        }
+    } catch (error) {
+        console.error("Chyba při mazání ankety:", error);
+        errorMessage = "Při mazání ankety došlo k chybě.";
+    }
+}
+
+// Pomocné funkce
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat("cs-CZ", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    }).format(date);
+}
+---
+
+<Layout title="Moje ankety - OpenVoting">
+    <div class="container">
+        <h1>Moje ankety</h1>
+
+        {successMessage && (
+                <div class="message success">
+                    <span>{successMessage}</span>
+                    <button class="close-message">&times;</button>
+                </div>
+        )}
+
+        {errorMessage && (
+                <div class="message error">
+                    <span>{errorMessage}</span>
+                    <button class="close-message">&times;</button>
+                </div>
+        )}
+
+        <div class="polls-section">
+            <h2>Ankety, ve kterých jsem hlasoval</h2>
+            {votedPolls.length === 0 ? (
+                    <p class="no-polls">Zatím jste nehlasoval(a) v žádné anketě.</p>
+            ) : (
+                    <div class="polls-grid">
+                        {votedPolls.map((poll) => (
+                                <div class="poll-card">
+                                    <h3>{poll.name}</h3>
+                                    <p class="poll-description">{poll.description}</p>
+                                    <div class="poll-meta">
+                                        <span>Vytvořeno: {formatDate(poll.created_at)}</span>
+                                        {poll.end_time && (
+                                                <span>Končí: {formatDate(poll.end_time)}</span>
+                                        )}
+                                    </div>
+                                    <div class="poll-actions">
+                                        <a href={`/poll/results/${poll.id}`} class="btn btn-secondary">Zobrazit výsledky</a>
+                                    </div>
+                                </div>
+                        ))}
+                    </div>
+            )}
+        </div>
+
+        {isOrganizer && (
+                <div class="polls-section">
+                    <h2>Mnou vytvořené ankety</h2>
+                    {createdPolls.length === 0 ? (
+                            <p class="no-polls">Zatím jste nevytvořil(a) žádnou anketu.</p>
+                    ) : (
+                            <div class="polls-grid">
+                                {createdPolls.map((poll) => (
+                                        <div class="poll-card">
+                                            <h3>{poll.name}</h3>
+                                            <p class="poll-description">{poll.description}</p>
+                                            <div class="poll-meta">
+                                                <span>Vytvořeno: {formatDate(poll.created_at)}</span>
+                                                {poll.end_time && (
+                                                        <span>Končí: {formatDate(poll.end_time)}</span>
+                                                )}
+                                                <span class="poll-status">
+                    {poll.active ? "Aktivní" : "Neaktivní"}
+                  </span>
+                                            </div>
+                                            <div class="poll-info">
+                                                {poll.anonymous && <span class="anonymous-tag">Anonymní</span>}
+                                            </div>
+                                            <div class="poll-actions">
+                                                <a href={`/poll/results/${poll.id}`} class="btn btn-secondary">Zobrazit</a>
+                                                <form method="POST" class="delete-form">
+                                                    <input type="hidden" name="action" value="delete" />
+                                                    <input type="hidden" name="poll_id" value={poll.id} />
+                                                    <button type="submit" class="btn btn-danger" data-confirm="Opravdu chcete smazat tuto anketu?">Smazat</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                ))}
+                            </div>
+                    )}
+
+                    <div class="create-new">
+                        <a href="/poll/create" class="btn btn-primary">Vytvořit novou anketu</a>
+                        <a href="/poll/group" class="btn btn-secondary">Skupiny</a>
+                    </div>
+                </div>
+        )}
+    </div>
+</Layout>
+
+<style>
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    h1 {
+        margin-bottom: 30px;
+        text-align: center;
+    }
+
+    .polls-section {
+        margin-bottom: 50px;
+    }
+
+    h2 {
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .no-polls {
+        color: #666;
+        font-style: italic;
+        text-align: center;
+        padding: 20px;
+        background-color: #f9f9f9;
+        border-radius: 8px;
+    }
+
+    .polls-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+    }
+
+    .poll-card {
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .poll-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+    }
+
+    .poll-card h3 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        color: #333;
+    }
+
+    .poll-description {
+        color: #555;
+        margin-bottom: 15px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .poll-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        margin-bottom: 15px;
+        font-size: 14px;
+        color: #666;
+    }
+
+    .poll-info {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 15px;
+        font-size: 14px;
+    }
+
+    .anonymous-tag {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 500;
+    }
+
+    .poll-status {
+        font-weight: 500;
+    }
+
+    .poll-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .btn {
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-size: 14px;
+        cursor: pointer;
+        border: none;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
+    }
+
+    .btn-primary {
+        background-color: #4CAF50;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: #45a049;
+    }
+
+    .btn-secondary {
+        background-color: #f0f0f0;
+        color: #333;
+        border: 1px solid #ddd;
+    }
+
+    .btn-secondary:hover {
+        background-color: #e0e0e0;
+    }
+
+    .btn-danger {
+        background-color: #f44336;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background-color: #d32f2f;
+    }
+
+    .message {
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .success {
+        background-color: #dff0d8;
+        color: #3c763d;
+        border: 1px solid #d6e9c6;
+    }
+
+    .error {
+        background-color: #f2dede;
+        color: #a94442;
+        border: 1px solid #ebccd1;
+    }
+
+    .close-message {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        color: inherit;
+    }
+
+    .delete-form {
+        display: inline;
+    }
+
+    .create-new {
+        margin-top: 30px;
+        text-align: center;
+    }
+
+    @media (max-width: 768px) {
+        .polls-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .poll-actions {
+            flex-direction: column;
+        }
+
+        .btn {
+            width: 100%;
+            margin-bottom: 8px;
+        }
+    }
+</style>
+
+<script>
+    // Zavření zpráv
+    document.querySelectorAll('.close-message').forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.closest('.message').style.display = 'none';
+        });
+    });
+
+    // Potvrzení před smazáním ankety
+    document.querySelectorAll('[data-confirm]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            if (!confirm(btn.getAttribute('data-confirm'))) {
+                e.preventDefault();
+            }
+        });
+    });
+</script>
