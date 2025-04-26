@@ -13,8 +13,19 @@ if (!user) {
 // Pouze organizátoři a admin mohou vytvářet skupiny
 const canCreateGroup = user.organizator || user.administrator;
 
+const isPopup = Astro.url.searchParams.has("popup");
+let groupCreated;
+
 // Získání skupin, kterých je uživatel vlastníkem
-const ownedGroups = await GroupModel.getByOwnerId(user.id);
+let ownedGroups = await GroupModel.getByOwnerId(user.id);
+
+let adminGroups;
+if (user.administrator) {
+    adminGroups = await GroupModel.getAll();
+
+    // Filter owned groups
+    adminGroups = adminGroups.filter(group => !ownedGroups.some(og => og.id === group.id));
+}
 
 // Získání skupin, kde je uživatel členem (ale není vlastníkem)
 const memberGroups = await GroupModel.getByMemberId(user.id);
@@ -25,10 +36,6 @@ const filteredMemberGroups = memberGroups.filter(
 
 // Získání všech uživatelů pro přidání do skupin
 const allUsers = canCreateGroup ? await UserModel.getAll() : [];
-
-// Pro úpravu skupiny
-let editGroup = null;
-let editGroupMembers = [];
 
 // Zpracování formulářů
 let successMessage = "";
@@ -46,7 +53,7 @@ if (Astro.request.method === "POST") {
             if (!groupName || groupName.trim() === "") {
                 errorMessage = "Název skupiny nemůže být prázdný";
             } else {
-                await GroupModel.create({
+                groupCreated = await GroupModel.create({
                     name: groupName,
                     owner_id: user.id
                 });
@@ -108,12 +115,6 @@ if (Astro.request.method === "POST") {
     }
 }
 
-// Funkce pro získání členů skupiny - bude použita při kliknutí na "Upravit"
-async function getGroupWithMembers(groupId) {
-    const group = await GroupModel.getById(groupId);
-    const members = await GroupMembershipModel.getMembersByGroupId(groupId);
-    return { group, members };
-}
 ---
 
 <Layout title="Správa skupin">
@@ -221,6 +222,75 @@ async function getGroupWithMembers(groupId) {
                         ))}
                     </div>
                 )}
+
+            {adminGroups && (
+                    <h2>Ostatní skupiny (administrátor)</h2>
+                <>
+                {adminGroups.length === 0 ? (
+                            <p class="empty-list">Zatím neexistují žádné skupiny</p>
+                    ) : (
+                            <div class="groups-container">
+                                {adminGroups.map((group) => (
+                                        <div class="group-card">
+                                            <div class="group-header">
+                                                <h3>{group.name}</h3>
+                                                <div class="group-actions">
+                                                    <button class="btn btn-small edit-group-btn" data-group-id={group.id}>
+                                                        Spravovat
+                                                    </button>
+                                                    <form method="POST" class="delete-form">
+                                                        <input type="hidden" name="action" value="delete">
+                                                        <input type="hidden" name="group-id" value={group.id}>
+                                                        <button type="submit" class="btn btn-small btn-danger" data-confirm={`Opravdu chcete smazat skupinu "${group.name}"?`}>
+                                                            Smazat
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                            <div class="group-details" id={`group-details-${group.id}`} style="display: none;">
+                                                <div class="group-edit">
+                                                    <h4>Upravit skupinu</h4>
+                                                    <form method="POST" class="edit-form">
+                                                        <input type="hidden" name="action" value="update">
+                                                        <input type="hidden" name="group-id" value={group.id}>
+                                                        <div class="form-group">
+                                                            <label for={`edit-name-${group.id}`}>Název:</label>
+                                                            <input type="text" id={`edit-name-${group.id}`} name="group-name" value={group.name}>
+                                                        </div>
+                                                        <button type="submit" class="btn btn-primary btn-small">Uložit změny</button>
+                                                    </form>
+                                                </div>
+
+                                                <div class="group-members">
+                                                    <h4>Členové skupiny</h4>
+                                                    <div class="members-list" id={`members-list-${group.id}`}>
+                                                        <p class="loading">Načítání členů...</p>
+                                                    </div>
+
+                                                    <div class="add-member">
+                                                        <h4>Přidat člena</h4>
+                                                        <form method="POST" class="add-member-form">
+                                                            <input type="hidden" name="action" value="add-member">
+                                                            <input type="hidden" name="group-id" value={group.id}>
+                                                            <div class="form-group">
+                                                                <select name="user-id" required>
+                                                                    <option value="">-- Vyberte uživatele --</option>
+                                                                    {allUsers.map((u) => (
+                                                                            <option value={u.id}>{u.name}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                            <button type="submit" class="btn btn-primary btn-small">Přidat</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                ))}
+                                    </div>
+                                    )}
+                    </>
+            )}
                 </div>
 
                 <div class="tab-content" id="tab-member">
@@ -472,7 +542,7 @@ async function getGroupWithMembers(groupId) {
                     }
                 </style>
 
-                <script>
+                <script define:vars={{isPopup, groupCreated}}>
                     // Přepínání záložek
                     document.querySelectorAll('.tab-btn').forEach(button => {
                         button.addEventListener('click', () => {
@@ -561,4 +631,17 @@ async function getGroupWithMembers(groupId) {
                             }
                         });
                     });
+
+                    // if there is query paramater "popup" and the request type is POST close window in 1000ms
+                    if (isPopup && groupCreated) {
+                        setTimeout(() => {
+                            // send data to parent window
+                            window.opener.postMessage({
+                                type: "group-created",
+                                groupId: groupCreated.id,
+                                groupName: groupCreated.name
+                            }, "*");
+                            window.close();
+                        }, 1000);
+                    }
                     </script>

@@ -1,13 +1,20 @@
 // src/util/db.js
 import { Pool } from 'pg';
 
-// Konfigurace připojení z proměnných prostředí
+// Workaround for Vite processing middleware
+let env;
+if (!process) {
+    env = import.meta.env;
+} else {
+    env = process.env;
+}
+
 const pool = new Pool({
-    user: import.meta.env.POSTGRES_USER || 'postgres',
-    password: import.meta.env.POSTGRES_PASSWORD || 'postgres',
-    host:import. meta.env.POSTGRES_HOST || 'localhost',
-    port: import.meta.env.POSTGRES_PORT || 5432,
-    database: import.meta.env.POSTGRES_DB || 'astro_db',
+    user: env.POSTGRES_USER || 'postgres',
+    password: env.POSTGRES_PASSWORD || 'postgres',
+    host:env.POSTGRES_HOST || 'localhost',
+    port: env.POSTGRES_PORT || 5432,
+    database: env.POSTGRES_DB || 'astro_db',
 });
 
 export const query = async (text, params) => {

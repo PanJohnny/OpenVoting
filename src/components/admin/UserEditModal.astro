@@ -1,0 +1,75 @@
+---
+import {Icon} from "astro-icon/components";
+---
+<dialog id="user-edit-modal">
+    <button class="close-modal xmark-top" title="uzavřít">
+        <Icon name="iconoir:xmark" size={20} />
+    </button>
+    <form method="POST">
+        <input type="hidden" name="action" value="edit-user">
+        <input type="hidden" name="user-id">
+        <h3>Úprava uživatele</h3>
+        <div class="form-group">
+            <label for="edit-username">Uživatelské jméno:</label>
+            <input type="text" id="edit-username" name="username" required>
+        </div>
+        <div class="form-group checkbox-group">
+            <label>
+                <input type="checkbox" id="edit-organizator" name="organizator">
+                Oprávnění organizátor
+            </label>
+        </div>
+        <div class="form-group checkbox-group">
+            <label>
+                <input type="checkbox" id="edit-administrator" name="administrator">
+                Oprávnění administrátor
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn" style="background-color: lightskyblue">Uložit změny</button>
+            <button type="button" class="btn btn-secondary close-modal">Zrušit</button>
+        </div>
+    </form>
+
+    <form method="POST">
+        <input type="hidden" name="action" value="reset-user-password">
+        <input type="hidden" name="user-id">
+        <h3>Obnovit heslo</h3>
+        <p>Pokud chcete obnovit heslo uživatele, klikněte na tlačítko níže.</p>
+        <div class="form-actions">
+            <button type="submit" class="btn" style="background-color: coral">Obnovit heslo</button>
+            <button type="button" class="btn btn-secondary close-modal">Zrušit</button>
+        </div>
+    </form>
+</dialog>
+
+<style>
+    dialog {
+        background-color: #f9f9f9;
+        padding: 25px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        border: none;
+        min-width: 400px;
+        position: fixed;
+    }
+
+    dialog::backdrop {
+        background-image: linear-gradient(45deg,
+        #5e35b1,
+        #673AB7,
+        darkmagenta,
+        rebeccapurple
+        );
+        opacity: 0.7;
+    }
+
+    .xmark-top {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: none;
+        border: none;
+        cursor: pointer;
+    }
+</style>

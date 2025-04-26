@@ -1,4 +1,6 @@
 ---
+import { Icon } from "astro-icon/components";
+
 // Získáme informace o přihlášeném uživateli
 const user = await Astro.session?.get("user");
 const isLoggedIn = user !== undefined;
@@ -11,23 +13,34 @@ const isOrganizator = user?.organizator;
         <a href="/" class="logo"><b>OpenVoting</b></a>
         <nav>
             {isLoggedIn ? (
-                    <div class="user-controls">
-                    <span class="username">
+                    <a class="btn user-profile" href="/poll/mine">
+                        {isAdmin ? (
+                                <Icon name="iconoir:user-crown" size={20}/>
+                        ): isOrganizator ? (
+                                <Icon name="iconoir:user-star" size={20}/>
+                        ) : (
+                                <Icon name="iconoir:user" size={20}/>
+                        )}
                         {user.name}
-                        {isAdmin && <span class="admin-badge">(admin)</span>}
-                    </span>
-                        {isOrganizator && (
-                                <a href="/poll/create" class="btn btn-create">Vytvořit anketu</a>
-                                <a href="/poll/mine" class="btn btn-create">Moje ankety</a>
-                        )}
+                    </a>
+
+                    <>
                         {isAdmin && (
-                                <a href="/admin" class="btn btn-admin">Admin</a>
+                                <a class="btn btn-admin" href="/admin">
+                                    <Icon name="iconoir:puzzle" size={20}/>
+                                    Admin
+                                </a>
                         )}
-                        <a href="/logout" class="btn btn-logout">Odhlásit</a>
-                    </div>
-            ) : (
-                    <a href="/login" class="btn btn-login">Přihlásit se</a>
-            )}
+                    </>
+
+                    <a class="btn btn-logout" href="/logout">
+                        <Icon name="iconoir:sandals" />
+                        Odhlásit se
+                    </a>
+            ): <a href="/login" class="btn btn-login">
+                <Icon name="iconoir:linux" size={20}/>
+                Přihlásit se
+            </a>}
         </nav>
     </div>
 </header>
@@ -40,6 +53,11 @@ const isOrganizator = user?.organizator;
         position: sticky;
         top: 0;
         z-index: 100;
+    }
+
+    [data-icon] {
+        vertical-align: middle;
+        margin-top: -5px;
     }
 
     .header-container {
@@ -77,18 +95,15 @@ const isOrganizator = user?.organizator;
         margin-right: 0.5rem;
     }
 
-    .admin-badge {
-        color: #4CAF50;
-        font-weight: bold;
-        margin-left: 0.25rem;
+    .btn {
+        text-decoration: none;
+        margin-left: 0.5rem;
+        text-wrap: nowrap;
     }
 
-    .btn {
-        padding: 0.5rem 1rem;
-        border-radius: 4px;
-        text-decoration: none;
-        transition: all 0.2s;
-        font-weight: 500;
+    .user-profile {
+        background-color: #4CAF50;
+        color: white;
     }
 
     .btn-login {
@@ -135,7 +150,7 @@ const isOrganizator = user?.organizator;
         }
     }
 
-    @media (max-width: 480px) {
+    @media (max-width: 640px) {
         .header-container {
             flex-direction: column;
             gap: 0.5rem;

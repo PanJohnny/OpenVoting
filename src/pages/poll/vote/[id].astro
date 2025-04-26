@@ -169,7 +169,7 @@ if (Astro.request.method === "POST" && canVote && poll) {
                                 <p>Váš hlas v anketě byl úspěšně zaznamenán.</p>
                                 <div class="nav-buttons">
                                     <a href="/" class="btn btn-secondary">Hlavní stránka</a>
-                                    <a href="/poll/results/{pollId}" class="btn btn-primary">Zobrazit výsledky</a>
+                                    <a href={`/poll/results/${pollId}\`} class="btn btn-primary">Zobrazit výsledky</a>
                                 </div>
                             </div>
                     )}

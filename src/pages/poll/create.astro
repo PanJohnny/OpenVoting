@@ -2,22 +2,24 @@
 import Layout from "../../layouts/Layout.astro";
 import { PollModel } from "../../util/polls";
 import { GroupModel } from "../../util/groups";
-import { UserModel } from "../../util/users";
 import { PollOptionModel } from "../../util/poll_options";
 import { PollVoterModel } from "../../util/poll_voters";
 import crypto from "crypto";
+import FloatingContainer from "../../components/FloatingContainer.astro";
+import Note from "../../components/Note.astro";
+import Message from "../../components/Message.astro";
+import Messenger from "../../util/ui_utils";
 
-// Kontrola oprávnění - pouze organizátor nebo admin může vytvářet ankety
 const user = await Astro.session?.get("user");
 if (!user || (!user.organizator && !user.administrator)) {
     return Astro.redirect("/");
 }
 
-// Získání skupin, kterých je uživatel vlastníkem
+// Owned groups
 const userGroups = await GroupModel.getByOwnerId(user.id);
 
-let message = "";
-let messageType = "";
+const messenger = new Messenger();
+
 let pollLink = "";
 let voterLinks = [];
 
@@ -29,13 +31,12 @@ if (Astro.request.method === "POST") {
         // Základní údaje ankety
         const pollName = formData.get("poll-name");
         const expiresStr = formData.get("poll-expires");
-        const expires = expiresStr ? new Date(expiresStr) : null;
+        const expires = expiresStr ? new Date(expiresStr as string) : null;
         const isAnonymous = formData.get("poll-anonymous") === "on";
-        const groupId = formData.get("poll-group");
-        const maxOptions = parseInt(formData.get("poll-max-options")) || 1;
-        const votersCount = isAnonymous ? parseInt(formData.get("voters-count")) || 10 : 0;
+        const groupId = formData.get("poll-group") as string;
+        const maxOptions = parseInt(formData.get("poll-max-options") as string) || 1;
+        const votersCount = isAnonymous ? parseInt(formData.get("voters-count") as string) || 10 : 0;
 
-        // Vytvoření ankety
         const poll = await PollModel.create({
             name: pollName,
             owner_id: user.id,
@@ -45,8 +46,7 @@ if (Astro.request.method === "POST") {
             max_options: maxOptions
         });
 
-        // Přidání možností ankety
-        const optionsCount = parseInt(formData.get("options-count")) || 2;
+        const optionsCount = parseInt(formData.get("options-count") as string) || 2;
         for (let i = 1; i <= optionsCount; i++) {
             const optionContent = formData.get(`option-${i}`);
             if (optionContent) {
@@ -58,7 +58,7 @@ if (Astro.request.method === "POST") {
             }
         }
 
-        // Pokud je anketa anonymní, vygenerujeme volební klíče
+        // Anonymous voting - gen key pairs
         if (isAnonymous) {
             // Generování volebních klíčů pro anonymní anketu
             voterLinks = [];
@@ -76,17 +76,15 @@ if (Astro.request.method === "POST") {
                 voterLinks.push(new URL(link, Astro.url).href);
             }
 
-            message = `Anonymní anketa "${pollName}" byla úspěšně vytvořena. Níže jsou odkazy pro hlasování.`;
+            messenger.success(`Anonymní anketa "${pollName}" byla úspěšně vytvořena. Níže jsou odkazy pro hlasování.`);
         } else {
-            message = `Anketa "${pollName}" byla úspěšně vytvořena.`;
-            pollLink = `/poll/${poll.id}`;
+            messenger.success(`Anketa "${pollName}" byla úspěšně vytvořena.`);
+            pollLink = `/poll/vote/${poll.id}`;
         }
 
-        messageType = "success";
-    } catch (error) {
+    } catch (error: any) {
         console.error("Chyba při vytváření ankety:", error);
-        message = `Chyba: ${error.message || "Nastala neočekávaná chyba při vytváření ankety"}`;
-        messageType = "error";
+        messenger.error(`Nastala neočekávaná chyba při vytváření ankety`);
     }
 }
 ---
@@ -95,27 +93,24 @@ if (Astro.request.method === "POST") {
     <div class="container">
         <h1>Vytvoření nové ankety</h1>
 
-        {message && (
-                <div class={`message ${messageType}`}>
-                    <p>{message}</p>
-                    <button class="close-message">&times;</button>
-                </div>
+        {messenger.map(m =>
+                <Message message={m} />
         )}
 
         {pollLink && (
-                <div class="poll-link-container">
+                <FloatingContainer backgroundColor="#f0f8ff">
                     <h3>Odkaz na anketu</h3>
                     <div class="poll-link">
                         <input type="text" id="poll-link" value={new URL(pollLink, Astro.url).href} readonly>
                         <button class="btn" id="copy-link">Kopírovat</button>
                     </div>
-                </div>
+                </FloatingContainer>
         )}
 
         {voterLinks.length > 0 && (
-                <div class="poll-link-container">
+                <FloatingContainer backgroundColor="#f0f8ff">
                     <h3>Odkazy pro anonymní hlasování</h3>
-                    <p class="note">Každý odkaz lze použít jen jednou. Rozešlete tyto odkazy hlasujícím.</p>
+                    <Note>Každý odkaz lze použít jen jednou. Rozešlete tyto odkazy hlasujícím.</Note>
                     <div class="voter-links-actions">
                         <button class="btn" id="copy-all-links">Kopírovat všechny odkazy</button>
                         <button class="btn" id="download-csv">Stáhnout jako CSV</button>
@@ -131,10 +126,11 @@ if (Astro.request.method === "POST") {
                                 </div>
                         ))}
                     </div>
-                </div>
+                </FloatingContainer>
         )}
 
-        <form method="POST" class="create-poll-form">
+        <FloatingContainer>
+            <form method="POST">
             <div class="form-group">
                 <label for="poll-name">Název ankety:</label>
                 <input type="text" id="poll-name" name="poll-name" required>
@@ -150,23 +146,23 @@ if (Astro.request.method === "POST") {
                     <input type="checkbox" name="poll-anonymous" id="poll-anonymous">
                     Anonymní hlasování
                 </label>
-                <span class="hint">Při anonymním hlasování se generují unikátní odkazy pro každého hlasujícího</span>
+                <Note>Při anonymním hlasování se generují unikátní odkazy pro každého hlasujícího</Note>
             </div>
 
             <div class="form-group" id="voters-count-group" style="display: none;">
                 <label for="voters-count">Počet hlasujících:</label>
                 <input type="number" id="voters-count" name="voters-count" value="10" min="1" max="1000">
-                <span class="hint">Pro každého hlasujícího bude vygenerován unikátní odkaz</span>
+                <Note>Pro každého hlasujícího bude vygenerován unikátní odkaz</Note>
             </div>
 
             <div class="form-group" id="group-selection">
                 <label for="poll-group">Skupina (pouze pro neanonymní hlasování):</label>
-                <a class="hint" href="/poll/group">Spravovat skupiny</a>
                 <select id="poll-group" name="poll-group">
                     <option value="null">-- Bez skupiny --</option>
-                    {userGroups.map((group) => (
+                    {userGroups.map((group: any) => (
                             <option value={group.id}>{group.name}</option>
                     ))}
+                    <option id="create-group" value="create">Vytvořit novou skupinu</option>
                 </select>
             </div>
 
@@ -195,147 +191,11 @@ if (Astro.request.method === "POST") {
                 <a href="/admin" class="btn btn-secondary">Zrušit</a>
             </div>
         </form>
+        </FloatingContainer>
     </div>
 </Layout>
 
 <style>
-    .container {
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 20px;
-    }
-
-    h1 {
-        margin-bottom: 30px;
-        text-align: center;
-    }
-
-    .create-poll-form {
-        background-color: #f9f9f9;
-        padding: 25px;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    }
-
-    .form-group {
-        margin-bottom: 20px;
-    }
-
-    label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: bold;
-    }
-
-    input[type="text"],
-    input[type="datetime-local"],
-    input[type="number"],
-    select {
-        width: 100%;
-        padding: 12px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        box-sizing: border-box;
-        font-size: 16px;
-    }
-
-    .checkbox-group {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .checkbox-group input {
-        margin: 0;
-        width: auto;
-    }
-
-    .checkbox-group label {
-        margin-bottom: 0;
-        font-weight: normal;
-    }
-
-    .hint {
-        color: #666;
-        font-size: 14px;
-        margin-top: 5px;
-        font-style: italic;
-    }
-
-    .option-row {
-        margin-bottom: 10px;
-    }
-
-    .form-actions {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 30px;
-    }
-
-    .btn {
-        padding: 12px 20px;
-        border-radius: 4px;
-        font-size: 16px;
-        cursor: pointer;
-        border: none;
-    }
-
-    .btn-primary {
-        background-color: #4CAF50;
-        color: white;
-    }
-
-    .btn-primary:hover {
-        background-color: #45a049;
-    }
-
-    .btn-secondary {
-        background-color: #f0f0f0;
-        color: #333;
-        border: 1px solid #ddd;
-    }
-
-    .btn-secondary:hover {
-        background-color: #e0e0e0;
-    }
-
-    .message {
-        padding: 15px;
-        margin: 20px 0;
-        border-radius: 4px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .success {
-        background-color: #dff0d8;
-        color: #3c763d;
-        border: 1px solid #d6e9c6;
-    }
-
-    .error {
-        background-color: #f2dede;
-        color: #a94442;
-        border: 1px solid #ebccd1;
-    }
-
-    .close-message {
-        background: none;
-        border: none;
-        font-size: 20px;
-        cursor: pointer;
-        color: inherit;
-    }
-
-    .poll-link-container {
-        background-color: #e8f5e9;
-        border: 1px solid #c8e6c9;
-        padding: 20px;
-        margin: 20px 0;
-        border-radius: 8px;
-    }
-
     .poll-link {
         display: flex;
         gap: 10px;
@@ -348,12 +208,6 @@ if (Astro.request.method === "POST") {
         border: 1px solid #ddd;
         border-radius: 4px;
         background-color: #f8f8f8;
-    }
-
-    .note {
-        font-size: 14px;
-        color: #555;
-        font-style: italic;
     }
 
     .voter-links-list {
@@ -386,38 +240,35 @@ if (Astro.request.method === "POST") {
         gap: 10px;
         margin-top: 10px;
     }
-
-    .btn-small {
-        padding: 5px 10px;
-        font-size: 12px;
-    }
 </style>
 
 <script>
-    // Dynamické přidávání možností k anketě
+    // Dynamic option adding
     let optionCounter = 2;
 
-    document.getElementById('add-option').addEventListener('click', () => {
+    document.getElementById('add-option')?.addEventListener('click', () => {
         optionCounter++;
         const optionsContainer = document.getElementById('options-container');
         const newOption = document.createElement('div');
         newOption.className = 'option-row';
         newOption.innerHTML = `<input type="text" name="option-${optionCounter}" placeholder="Možnost ${optionCounter}" required>`;
-        optionsContainer.appendChild(newOption);
-        document.getElementById('options-count').value = optionCounter;
+        optionsContainer?.appendChild(newOption);
+        const optionCount = document.getElementById('options-count') as HTMLInputElement;
+        optionCount.value = `${optionCounter}`;
     });
 
-    // Podmíněné zobrazování prvků pro anonymní anketu
-    const anonymousCheckbox = document.getElementById('poll-anonymous');
-    const groupSelection = document.getElementById('group-selection');
-    const votersCountGroup = document.getElementById('voters-count-group');
+    // Anonymous checkbox and group selection
+    const anonymousCheckbox = document.getElementById('poll-anonymous') as HTMLInputElement;
+    const groupSelection = document.getElementById('group-selection') as HTMLDivElement;
+    const votersCountGroup = document.getElementById('voters-count-group') as HTMLDivElement;
 
     if (anonymousCheckbox) {
         anonymousCheckbox.addEventListener('change', () => {
             if (anonymousCheckbox.checked) {
                 groupSelection.style.display = 'none';
                 votersCountGroup.style.display = 'block';
-                document.getElementById('poll-group').value = 'null';
+                const pollGroup = document.getElementById('poll-group') as HTMLInputElement;
+                pollGroup.value = 'null';
             } else {
                 groupSelection.style.display = 'block';
                 votersCountGroup.style.display = 'none';
@@ -425,78 +276,67 @@ if (Astro.request.method === "POST") {
         });
     }
 
-    // Zavření zprávy
+    // Message closing
     document.querySelectorAll('.close-message').forEach(btn => {
         btn.addEventListener('click', () => {
-            btn.closest('.message').style.display = 'none';
+            const message = btn.closest('.message');
+            if (message) {
+                message.remove();
+            }
         });
     });
 
-    // Kopírování odkazu do schránky
-    document.getElementById('copy-link')?.addEventListener('click', () => {
-        const linkInput = document.getElementById('poll-link');
-        linkInput.select();
-        document.execCommand('copy');
-
-        const copyBtn = document.getElementById('copy-link');
-        copyBtn.textContent = 'Zkopírováno!';
+    function confirmCopyOnButton(button: HTMLButtonElement) {
+        const originalText = button.textContent;
+        button.textContent = 'Zkopírováno!';
         setTimeout(() => {
-            copyBtn.textContent = 'Kopírovat';
+            button.textContent = originalText;
         }, 2000);
+    }
+
+    // Link copying
+    document.getElementById('copy-link')?.addEventListener('click', () => {
+        const linkInput = document.getElementById('poll-link') as HTMLInputElement;
+        linkInput.select();
+        navigator.clipboard.writeText(linkInput.value);
+
+        const copyBtn = document.getElementById('copy-link') as HTMLButtonElement;
+        confirmCopyOnButton(copyBtn);
     });
 
-    // Kopírování jednotlivých odkazů pro hlasující
+    // Copying individual voter links
     document.querySelectorAll('.copy-voter-link')?.forEach(btn => {
         btn.addEventListener('click', () => {
-            const link = btn.getAttribute('data-link');
-            const tempInput = document.createElement('input');
-            tempInput.value = link;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            document.execCommand('copy');
-            document.body.removeChild(tempInput);
+            const link = btn.getAttribute('data-link') as string;
+            navigator.clipboard.writeText(link);
 
-            const originalText = btn.textContent;
-            btn.textContent = 'Zkopírováno!';
-            setTimeout(() => {
-                btn.textContent = originalText;
-            }, 2000);
+            confirmCopyOnButton(btn as HTMLButtonElement);
         });
     });
 
-    // Kopírování všech odkazů
+    // Copy all links
     document.getElementById('copy-all-links')?.addEventListener('click', () => {
-        const links = Array.from(document.querySelectorAll('.voter-link input')).map(input => input.value);
+        const links = Array.from(document.querySelectorAll('.voter-link input')).map(input => (input as HTMLInputElement).value);
         const text = links.join('\n');
 
-        const tempInput = document.createElement('textarea');
-        tempInput.value = text;
-        document.body.appendChild(tempInput);
-        tempInput.select();
-        document.execCommand('copy');
-        document.body.removeChild(tempInput);
+        navigator.clipboard.writeText(text);
 
-        const btn = document.getElementById('copy-all-links');
-        btn.textContent = 'Zkopírováno!';
-        setTimeout(() => {
-            btn.textContent = 'Kopírovat všechny odkazy';
-        }, 2000);
+        const btn = document.getElementById('copy-all-links') as HTMLButtonElement;
+        confirmCopyOnButton(btn);
     });
 
-    // Stažení CSV se seznamem odkazů
+    // CSV download
     document.getElementById('download-csv')?.addEventListener('click', () => {
-        const links = Array.from(document.querySelectorAll('.voter-link input')).map(input => input.value);
+        const links = Array.from(document.querySelectorAll('.voter-link input')).map(input => (input as HTMLInputElement).value);
         let csvContent = "data:text/csv;charset=utf-8,";
 
-        // Přidání záhlaví CSV
         csvContent += "Odkaz pro hlasování\n";
 
-        // Přidání jednotlivých odkazů
         links.forEach(link => {
             csvContent += link + "\n";
         });
 
-        // Vytvoření odkazu pro stažení
+        // CSV download
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
@@ -504,5 +344,24 @@ if (Astro.request.method === "POST") {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    });
+
+    const createGroup = document.querySelector("#create-group");
+    createGroup?.addEventListener("click", () => {
+        window.open("/poll/group?popup", "Vytvořit skupinu", "width=800,height=600");
+        window.addEventListener("message", (event) => {
+            if (event.data.type === "group-created") {
+                // get the group data and append prepend before #create-group
+                const groupId = event.data.groupId;
+                const groupName = event.data.groupName;
+
+                const newOption:HTMLOptionElement = document.createElement("option");
+                newOption.value = groupId;
+                newOption.textContent = groupName;
+                newOption.selected = true;
+                (createGroup as HTMLOptionElement).selected = false;
+                createGroup.parentElement?.insertBefore(newOption, createGroup);
+            }
+        });
     });
 </script>

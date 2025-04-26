@@ -1,0 +1,13 @@
+<script>
+    const closeModalButtons = document.querySelectorAll('.close-modal');
+
+    closeModalButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            // find the nearest dialog element
+            const dialog = button.closest('dialog');
+            if (dialog) {
+                dialog.close();
+            }
+        });
+    });
+</script>

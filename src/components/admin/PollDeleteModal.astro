@@ -1,0 +1,7 @@
+---
+import FormModal from "./FormModal.astro";
+---
+<FormModal id="poll-delete-modal" action="delete-poll" title="Smazat hlasování" submitText="Smazat" submitColor="white" submitBackground="red">
+    <p>Opravdu chcete smazat skupinu <span id="delete-poll-name"></span>? Tato akce je nevratná.</p>
+    <input type="hidden" name="poll-id">
+</FormModal>

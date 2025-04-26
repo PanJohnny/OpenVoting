@@ -1,0 +1,7 @@
+---
+import FormModal from "./FormModal.astro";
+---
+<FormModal id="user-delete-modal" action="delete-user" title="Smazat uživatele" submitText="Smazat" submitColor="white" submitBackground="red">
+    <p>Opravdu chcete smazat uživatele <span id="delete-username"></span>? Tato akce je nevratná.</p>
+    <input type="hidden" name="user-id">
+</FormModal>

@@ -2,12 +2,16 @@
 import Layout from "../../layouts/Layout.astro";
 import { PollModel } from "../../util/polls";
 import { PollVoteModel } from "../../util/poll_votes";
+import Messenger from "../../util/ui_utils";
+import Message from "../../components/Message.astro";
 
 // Kontrola přihlášení uživatele
 const user = await Astro.session?.get("user");
 if (!user) {
     return Astro.redirect("/login");
 }
+
+const messenger = new Messenger();
 
 // Získání anket, ve kterých uživatel hlasoval
 const votedPolls = await PollVoteModel.getPollsVotedByUser(user.id);
@@ -19,10 +23,6 @@ if (isOrganizer) {
     createdPolls = await PollModel.getByOwnerId(user.id);
 }
 
-// Zpracování požadavku na smazání ankety
-let successMessage = "";
-let errorMessage = "";
-
 if (Astro.request.method === "POST") {
     try {
         const formData = await Astro.request.formData();
@@ -30,23 +30,21 @@ if (Astro.request.method === "POST") {
         const pollId = formData.get("poll_id")?.toString();
 
         if (action === "delete" && pollId && isOrganizer) {
-            const deletedPoll = await PollModel.deletePoll(pollId, user.id);
+            const deletedPoll = await PollModel.delete(pollId);
             if (deletedPoll) {
-                successMessage = "Anketa byla úspěšně smazána.";
-                // Aktualizujeme seznam anket po smazání
-                createdPolls = await PollModel.getPollsByCreator(user.id);
+                messenger.success("Anketa byla úspěšně smazána.");
+                createdPolls = await PollModel.getByOwnerId(user.id);
             } else {
-                errorMessage = "Anketu se nepodařilo smazat nebo k ní nemáte oprávnění.";
+                messenger.error("Anketu se nepodařilo smazat, nebo se pokoušíte smazat anketu, k čemuž nemáte oprávnění.");
             }
         }
     } catch (error) {
         console.error("Chyba při mazání ankety:", error);
-        errorMessage = "Při mazání ankety došlo k chybě.";
+        messenger.error("Při mazání ankety došlo k chybě.");
     }
 }
 
-// Pomocné funkce
-function formatDate(dateString) {
+function formatDate(dateString:string) {
     const date = new Date(dateString);
     return new Intl.DateTimeFormat("cs-CZ", {
         day: "2-digit",
@@ -62,19 +60,9 @@ function formatDate(dateString) {
     <div class="container">
         <h1>Moje ankety</h1>
 
-        {successMessage && (
-                <div class="message success">
-                    <span>{successMessage}</span>
-                    <button class="close-message">&times;</button>
-                </div>
-        )}
-
-        {errorMessage && (
-                <div class="message error">
-                    <span>{errorMessage}</span>
-                    <button class="close-message">&times;</button>
-                </div>
-        )}
+        {messenger.map(m => (
+            <Message message={m} />
+        ))}
 
         <div class="polls-section">
             <h2>Ankety, ve kterých jsem hlasoval</h2>

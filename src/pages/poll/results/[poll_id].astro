@@ -3,6 +3,9 @@ import Layout from "../../../layouts/Layout.astro";
 import { PollModel } from "../../../util/polls";
 import { PollOptionModel } from "../../../util/poll_options";
 import { PollVoteModel } from "../../../util/poll_votes";
+import Messenger from "../../../util/ui_utils";
+import Message from "../../../components/Message.astro";
+import FloatingContainer from "../../../components/FloatingContainer.astro";
 
 // Získání ID ankety z URL parametrů
 const { poll_id } = Astro.params;
@@ -16,35 +19,33 @@ let voteCounts = [];
 let totalVotes = 0;
 let canViewResults = false;
 let canClosePoll = false;
-let message = "";
-let messageType = "";
+
+const messenger = new Messenger();
 
 // Zpracování požadavku na uzavření ankety
 if (Astro.request.method === "POST") {
     try {
         const formData = await Astro.request.formData();
         const action = formData.get("action");
-
-        if (action === "close_poll" && user && poll_id && (user.administrator || user.id === poll.owner_id)) {
-            // Načtení aktuálních dat ankety
+        if (!poll_id || !action) {
+            messenger.error("Chybí ID ankety nebo akce");
+        } else {
             poll = await PollModel.getById(parseInt(poll_id));
+            if (action === "close_poll" && user && poll_id && (user.administrator || user.id === poll.owner_id)) {
+                if (poll) {
+                    await PollModel.update(parseInt(poll_id), {
+                        name: poll.name,
+                        expires: new Date(),
+                        max_options: poll.max_options
+                    });
 
-            if (poll) {
-                // Aktualizace ankety - nastavení aktuálního času jako času ukončení
-                await PollModel.update(parseInt(poll_id), {
-                    name: poll.name,
-                    expires: new Date(),
-                    max_options: poll.max_options
-                });
-
-                message = "Anketa byla úspěšně uzavřena";
-                messageType = "success";
+                    messenger.success("Anketa byla úspěšně uzavřena");
+                }
             }
         }
     } catch (error) {
         console.error("Chyba při uzavírání ankety:", error);
-        message = "Chyba při uzavírání ankety";
-        messageType = "error";
+        messenger.error("Nastala chyba při uzavírání ankety");
     }
 }
 
@@ -55,8 +56,7 @@ try {
         poll = await PollModel.getById(parseInt(poll_id));
 
         if (!poll) {
-            message = "Anketa nebyla nalezena";
-            messageType = "error";
+            messenger.error("Anketa nebyla nalezena");
         } else {
             // Kontrola oprávnění pro zobrazení výsledků
             const isPollExpired = poll.expires && new Date(poll.expires) < new Date();
@@ -67,46 +67,34 @@ try {
             canClosePoll = !isPollExpired && (isOwner || isAdmin);
 
             if (canViewResults) {
-                // Získání možností ankety
                 options = await PollOptionModel.getByPollId(parseInt(poll_id));
 
-                // Získání počtu hlasů pro jednotlivé možnosti
                 voteCounts = await PollVoteModel.getPollResults(parseInt(poll_id));
 
-                // Výpočet celkového počtu hlasů
-                totalVotes = voteCounts.reduce((sum, option) => sum + parseInt(option.vote_count), 0);
+                totalVotes = voteCounts.reduce((sum:any, option:any) => sum + parseInt(option.vote_count), 0);
 
-                // Pokud uživatel vidí výsledky před ukončením, zobrazit upozornění
-                if (!isPollExpired && (isOwner || isAdmin)) {
-                    message = isOwner
-                        ? "Prohlížíte si výsledky před ukončením ankety, protože jste jejím autorem"
-                        : "Prohlížíte si výsledky před ukončením ankety, protože jste administrátor";
-                    messageType = "info";
+                // Before poll is closed
+                if (canClosePoll) {
+                    if (isOwner) {
+                        messenger.warning("Prohlížíte výsledky před uzavřením hlasování, jelikož jste zakladatelem hlasování");
+                    } else if (isAdmin) {
+                        messenger.warning("Prohlížíte výsledky před uzavřením hlasování, jelikož jste administrátor");
+                    }
                 }
-            } else {
-                message = "Výsledky této ankety budou dostupné až po jejím ukončení";
-                messageType = "warning";
             }
         }
     } else {
-        message = "Chybí ID ankety";
-        messageType = "error";
+        messenger.error("ID ankety není platné");
     }
 } catch (error) {
     console.error("Chyba při načítání výsledků:", error);
-    message = "Nastala neočekávaná chyba při načítání výsledků ankety";
-    messageType = "error";
+    messenger.error("Nastala chyba při načítání výsledků ankety");
 }
 ---
 
 <Layout title={poll ? `Výsledky: ${poll.name}` : "Výsledky ankety"}>
     <div class="container">
-        {message && (
-                <div class={`message ${messageType}`}>
-                    <p>{message}</p>
-                    <button class="close-message">&times;</button>
-                </div>
-        )}
+
 
         {poll && (
                 <div class="poll-header">
@@ -127,13 +115,19 @@ try {
                 </div>
         )}
 
+        {
+            messenger.map(m => (
+                    <Message message={m} />
+            ))
+        }
+
         {canViewResults && options.length > 0 && (
-                <div class="results-container">
+                <FloatingContainer>
                     <h2>Výsledky hlasování</h2>
                     <p class="total-votes">Celkem hlasů: {totalVotes}</p>
 
                     <div class="results-list">
-                        {voteCounts.map((option) => {
+                        {voteCounts.map((option:any) => {
                             const voteCount = option.vote_count;
                             const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
 
@@ -150,19 +144,21 @@ try {
                             );
                         })}
                     </div>
-                </div>
+                </FloatingContainer>
         )}
 
         {canClosePoll && (
-                <div class="actions-container">
-                    <form method="POST">
-                        <input type="hidden" name="action" value="close_poll">
-                        <button type="submit" class="btn btn-danger" id="close-poll-btn">
-                            Ukončit anketu nyní
-                        </button>
-                    </form>
-                    <p class="warning-text">Toto ukončí anketu a zveřejní výsledky pro všechny uživatele.</p>
-                </div>
+                <FloatingContainer backgroundColor="white">
+                    <div class="actions-container">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="close_poll">
+                            <button type="submit" class="btn btn-danger" id="close-poll-btn">
+                                Ukončit anketu nyní
+                            </button>
+                        </form>
+                        <p class="warning-text">Toto tlačítko ukončí anketu a zveřejní výsledky pro všechny uživatele.</p>
+                    </div>
+                </FloatingContainer>
         )}
 
         {!canViewResults && poll && (
@@ -178,19 +174,9 @@ try {
 </Layout>
 
 <style>
-    .container {
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 20px;
-    }
-
     .poll-header {
         text-align: center;
         margin-bottom: 30px;
-    }
-
-    h1 {
-        margin-bottom: 10px;
     }
 
     h2 {
@@ -200,47 +186,6 @@ try {
 
     .poll-info {
         color: #666;
-    }
-
-    .message {
-        padding: 15px;
-        margin: 20px 0;
-        border-radius: 4px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .success {
-        background-color: #dff0d8;
-        color: #3c763d;
-        border: 1px solid #d6e9c6;
-    }
-
-    .error {
-        background-color: #f2dede;
-        color: #a94442;
-        border: 1px solid #ebccd1;
-    }
-
-    .info {
-        background-color: #d9edf7;
-        color: #31708f;
-        border: 1px solid #bce8f1;
-    }
-
-    .warning {
-        background-color: #fcf8e3;
-        color: #8a6d3b;
-        border: 1px solid #faebcc;
-    }
-
-    .close-message {
-        background: none;
-        border: none;
-        font-size: 20px;
-        cursor: pointer;
-        color: inherit;
     }
 
     .results-container {
@@ -332,7 +277,7 @@ try {
 
     .warning-text {
         color: #d9534f;
-        font-size: 14px;
+        font-size: 18px;
         margin-top: 10px;
     }
 
@@ -351,14 +296,6 @@ try {
 </style>
 
 <script>
-    // Zavření zprávy
-    document.querySelectorAll('.close-message').forEach(btn => {
-        btn.addEventListener('click', () => {
-            btn.closest('.message').style.display = 'none';
-        });
-    });
-
-    // Potvrzení uzavření ankety
     document.getElementById('close-poll-btn')?.addEventListener('click', function(event) {
         const confirmed = confirm('Opravdu chcete ukončit tuto anketu? Tato akce je nevratná.');
         if (!confirmed) {

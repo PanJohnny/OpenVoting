@@ -73,5 +73,17 @@ export const UserModel = {
     async getAll() {
         const result = await query('SELECT id, name, organizator, administrator, created_at, updated_at FROM users');
         return result.rows;
+    },
+
+    async isLatest(user) {
+        // checks if the user updated_at matches the DB, if not, it means the user is not the latest
+        const result = await query('SELECT updated_at FROM users WHERE id = $1', [user.id]);
+        const dbUser = result.rows[0];
+        if (!dbUser) {
+            return false; // User not found
+        }
+
+
+        return user.updated_at.getTime() === dbUser.updated_at.getTime();
     }
 };
