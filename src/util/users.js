@@ -19,6 +19,11 @@ export const UserModel = {
         return result.rows[0];
     },
 
+    async getPasswordById(id) {
+        const result = await query('SELECT password FROM users WHERE id = $1', [id]);
+        return result.rows[0].password;
+    },
+
     // Získání uživatele podle jména
     async getByName(name) {
         const result = await query('SELECT * FROM users WHERE name = $1', [name]);
@@ -85,5 +90,24 @@ export const UserModel = {
 
 
         return user.updated_at.getTime() === dbUser.updated_at.getTime();
+    },
+
+    async changePassword(id, oldPassword, newPassword) {
+        const pass = await this.getPasswordById(id);
+        if (!pass) {
+            throw new Error("user not found");
+        }
+
+        const isPasswordValid = await bcrypt.compare(oldPassword, pass);
+        if (!isPasswordValid) {
+            throw new Error("wrong password");
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const result = await query(
+            'UPDATE users SET password = $1 WHERE id = $2 RETURNING *',
+            [hashedPassword, id]
+        );
+        return result.rows[0];
     }
 };

@@ -1,0 +1,181 @@
+---
+import Layout from "../layouts/Layout.astro";
+import FloatingContainer from "../components/FloatingContainer.astro";
+import Note from "../components/Note.astro";
+import {UserModel} from "../util/users";
+import Messenger from "../util/ui_utils";
+import Message from "../components/Message.astro";
+
+let user = await Astro.session?.get("user");
+if (!user) {
+    return Astro.redirect("/");
+}
+
+const messenger = new Messenger();
+
+if (Astro.request.method === "POST") {
+    const pattern = new RegExp(/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/);
+    const formData = await Astro.request.formData();
+    const oldPassword = formData.get("old-password") as string;
+    const newPassword = formData.get("password") as string;
+    const confirmPassword = formData.get("confirm-password") as string;
+
+    if (oldPassword && newPassword && confirmPassword) {
+        if (newPassword !== confirmPassword) {
+            return new Response()
+        } else if (!pattern.test(newPassword)) {
+            messenger.error("Heslo musí mít alespoň 8 znaků, obsahovat velká a malá písmena, číslice a speciální znaky.");
+        } else {
+            try {
+                user = await UserModel.changePassword(user.id, oldPassword, newPassword);
+                messenger.success("Heslo bylo úspěšně změněno");
+                Astro.session?.set("user", user);
+
+                // set redirect to referer if set (do not return response, just redirect)
+                let referer = await Astro.session?.get("pswdRstRef");
+                if (referer) {
+                    Astro.session?.delete("pswdRstRef");
+                    Astro.response.status = 302;
+                    Astro.response.headers.set("Location", referer);
+                } else {
+                    Astro.response.status = 302;
+                    Astro.response.headers.set("Location", "/");
+                }
+            } catch (error) {
+                if (error instanceof Error) {
+                    console.error(error);
+                    if (error.message === "wrong password") {
+                        messenger.error("Zadané heslo je nesprávné");
+                    } else if (error.message === "user not found") {
+                        return Astro.redirect("/login");
+                    } else {
+                        messenger.error("Nastala chyba při změně hesla");
+                    }
+                } else {
+                    messenger.error("Nastala chyba při změně hesla");
+                }
+            }
+        }
+    } else {
+        messenger.error("Zadejte prosím všechna pole");
+    }
+} else {
+    let referer = Astro.request.headers.get("referer");
+    if (referer) {
+        // if referer not the current website, delete it
+        let url = new URL(referer);
+        if (url.hostname !== Astro.url.hostname) {
+            referer = null;
+        }
+        Astro.session?.set("pswdRstRef", referer);
+    }
+}
+
+
+---
+<Layout title="Změna hesla">
+    <div class="container">
+        <h1>Změna hesla</h1>
+        {messenger.map(m => (
+            <Message message={m} />
+        ))}
+        <FloatingContainer>
+            <form method="POST">
+                <h3>Staré heslo</h3>
+                <label>
+                    <input type="password" name="old-password" placeholder="Staré heslo" autocomplete="off" autofocus required />
+                </label>
+                <Note>
+                    V případě ztráty hesla kontaktujte administrátora.
+                </Note>
+                <h3>Nové heslo</h3>
+                <label>
+                    <input type="password" name="password" placeholder="Nové heslo" autocomplete="off" required />
+                </label>
+                <label>
+                    <input type="password" name="confirm-password" placeholder="Zopakujte nové heslo" autocomplete="off" required />
+                </label>
+                <p id="feedback">
+
+                </p>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Změnit heslo</button>
+                    <button type="button" class="btn btn-secondary" id="goback">Zrušit</button>
+                </div>
+            </form>
+        </FloatingContainer>
+        <FloatingContainer>
+            <h3>Pravidla hesla</h3>
+            <ul>
+                <li>Heslo musí mít alespoň 8 znaků</li>
+                <li>Heslo musí obsahovat velká a malá písmena</li>
+                <li>Heslo musí obsahovat číslice</li>
+                <li>Heslo musí obsahovat speciální znaky</li>
+            </ul>
+        </FloatingContainer>
+    </div>
+</Layout>
+
+<style>
+    #feedback {
+        color: red;
+        font-size: 1em;
+        margin-top: 10px;
+    }
+
+    :global(.invalid) {
+        animation: shake 0.5s ease-in-out forwards;
+    }
+
+    @keyframes shake {
+        0% {
+            transform: translateX(0);
+            border: 0 solid white;
+        }
+        25% { transform: translateX(-5px); }
+        50% {
+            transform: translateX(5px);
+            border: 1px solid red;
+        }
+        75% { transform: translateX(-5px); }
+        100% {
+            transform: translateX(0);
+            border: 0 solid white;
+        }
+    }
+</style>
+
+<script>
+    const form = document.querySelector("form") as HTMLFormElement;
+    const goback = document.getElementById("goback") as HTMLButtonElement;
+    const newPasswordInput = form.querySelector('input[name="password"]') as HTMLInputElement;
+    const confirmPasswordInput = form.querySelector('input[name="confirm-password"]') as HTMLInputElement;
+    const feedback = document.getElementById("feedback") as HTMLParagraphElement;
+    const floatingContainer = document.querySelector(".floating-container") as HTMLDivElement;
+    const pattern = new RegExp(/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/);
+
+    goback.addEventListener("click", () => {
+        window.history.back();
+    });
+
+    form.addEventListener("submit", (event) => {
+        console.log(event);
+        if (newPasswordInput.value !== confirmPasswordInput.value) {
+            event.preventDefault();
+            feedback.textContent = "Nové heslo se neshoduje se zopakovaným heslem.";
+            floatingContainer.classList.add("invalid");
+            setTimeout(() => {
+                floatingContainer.classList.remove("invalid");
+            }, 500);
+        } else if (!pattern.test(newPasswordInput.value)) {
+            event.preventDefault();
+            feedback.textContent = "Heslo musí mít alespoň 8 znaků, obsahovat velká a malá písmena, číslice a speciální znaky.";
+            floatingContainer.classList.add("invalid");
+            setTimeout(() => {
+                floatingContainer.classList.remove("invalid");
+            }, 500);
+        } else {
+            feedback.textContent = "";
+        }
+    });
+</script>

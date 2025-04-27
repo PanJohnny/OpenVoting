@@ -1,0 +1,120 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import FloatingContainer from "../../components/FloatingContainer.astro";
+---
+<Layout title="Ochrana osobních údajů">
+    <div class="container">
+        <h1 class="title">Ochrana osobních údajů</h1>
+
+        <FloatingContainer>
+            <section>
+                <h2>Úvod</h2>
+                <p>Tento dokument popisuje, jak nakládáme s vašimi osobními údaji při používání našeho hlasovacího systému. Zpracování osobních údajů probíhá v souladu s Nařízením Evropského parlamentu a Rady (EU) 2016/679 (GDPR) a zákonem č. 110/2019 Sb., o zpracování osobních údajů.</p>
+            </section>
+
+            <section>
+                <h2>Jaké osobní údaje shromažďujeme</h2>
+                <ul>
+                    <li>Uživatelské jméno</li>
+                    <li>Hashované heslo (nikdy neukládáme hesla v otevřené formě)</li>
+                    <li>Datum vytvoření účtu</li>
+                    <li>Datum poslední změny uložených údajů</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>Účely zpracování osobních údajů</h2>
+                <p>Vaše osobní údaje zpracováváme za účelem:</p>
+                <ul>
+                    <li>Správy vašeho uživatelského účtu</li>
+                    <li>Umožnění účasti v hlasováních</li>
+                    <li>Zajištění bezpečnosti systému</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>Typy hlasování a ochrana soukromí</h2>
+
+                <h3>Anonymní hlasování</h3>
+                <p>Při anonymním hlasování používáme technologii tzv. "blindly signed tokenů". Každý účastník obdrží unikátní URL odkaz, který mu umožňuje hlasovat bez propojení s jeho identitou.</p>
+                <p><strong>Míra anonymity:</strong> Systém byl navržen tak, aby nebylo možné spojit konkrétní hlas s konkrétním uživatelem. Administrátor systému může pouze zjistit, zda byl hlasovací token použit, nikoli však jak bylo hlasováno. Tímto způsobem zajišťujeme vysokou míru anonymity, kdy ani provozovatel systému nemůže zjistit, jak konkrétní uživatel hlasoval.</p>
+
+                <h3>Neanonymní hlasování</h3>
+                <p>Při běžném (neanonymním) hlasování systém ukládá informace o tom, který uživatel hlasoval pro jakou možnost. Tyto údaje jsou dostupné organizátorům hlasování.</p>
+            </section>
+
+            <section>
+                <h2>Správa skupin</h2>
+                <p>Organizátoři hlasování mohou:</p>
+                <ul>
+                    <li>Vyhledávat uživatele podle uživatelského jména</li>
+                    <li>Přiřazovat uživatele do skupin pro účely hlasování</li>
+                    <li>Každá skupina je vázána na konkrétní hlasování</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>Doba uchovávání údajů</h2>
+                <p>Vaše osobní údaje uchováváme po dobu existence vašeho účtu v systému. Po zrušení účtu jsou vaše osobní údaje odstraněny nebo anonymizovány.</p>
+            </section>
+
+            <section>
+                <h2>Vaše práva</h2>
+                <p>V souladu s GDPR máte právo na:</p>
+                <ul>
+                    <li>Přístup k vašim osobním údajům</li>
+                    <li>Opravu nesprávných údajů</li>
+                    <li>Výmaz údajů ("právo být zapomenut")</li>
+                    <li>Omezení zpracování</li>
+                    <li>Přenositelnost údajů</li>
+                    <li>Námitku proti zpracování</li>
+                    <li>Odvolání souhlasu se zpracováním</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>Zabezpečení údajů</h2>
+                <p>Přijímáme technická a organizační opatření k zajištění bezpečnosti vašich údajů, včetně:</p>
+                <ul>
+                    <li>Šifrování hesel pomocí bezpečných hashovacích algoritmů</li>
+                    <li>Zabezpečeného přenosu dat</li>
+                    <li>Pravidelné kontroly a aktualizace bezpečnostních opatření</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>Změny v zásadách ochrany osobních údajů</h2>
+                <p>Tyto zásady můžeme čas od času aktualizovat. O významných změnách vás budeme informovat.</p>
+            </section>
+
+            <section>
+                <h2>Kontakt</h2>
+                <p>Pro uplatnění vašich práv nebo s dotazy ohledně zpracování vašich osobních údajů kontaktujte správce stránky.</p>
+            </section>
+        </FloatingContainer>
+    </div>
+</Layout>
+
+<style>
+    section {
+        margin-bottom: 2rem;
+    }
+
+    h2 {
+        color: #333;
+        margin-top: 1.5rem;
+    }
+
+    h3 {
+        color: #444;
+        margin-top: 1rem;
+    }
+
+    ul {
+        padding-left: 1.5rem;
+    }
+
+    strong {
+        font-weight: 600;
+    }
+</style>

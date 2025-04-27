@@ -12,7 +12,7 @@ if (!user) {
 }
 
 // Načtení ankety
-const pollId = parseInt(Astro.params.id);
+const pollId = parseInt(Astro.params.id as string);
 let poll = null;
 let options = [];
 let canVote = false;
@@ -143,7 +143,7 @@ if (Astro.request.method === "POST" && canVote && poll) {
                                 </p>
 
                                 <div class="options-container">
-                                    {options.map((option) => (
+                                    {options.map((option:any) => (
                                             <div class="option">
                                                 <label class="option-label">
                                                     <input
@@ -169,7 +169,7 @@ if (Astro.request.method === "POST" && canVote && poll) {
                                 <p>Váš hlas v anketě byl úspěšně zaznamenán.</p>
                                 <div class="nav-buttons">
                                     <a href="/" class="btn btn-secondary">Hlavní stránka</a>
-                                    <a href={`/poll/results/${pollId}\`} class="btn btn-primary">Zobrazit výsledky</a>
+                                    <a href={`/poll/results/${pollId}`} class="btn btn-primary">Zobrazit výsledky</a>
                                 </div>
                             </div>
                     )}

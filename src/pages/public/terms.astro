@@ -1,0 +1,95 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import FloatingContainer from "../../components/FloatingContainer.astro";
+---
+<Layout title="Podmínky použití">
+    <div class="container">
+        <h1 class="title">Podmínky použití</h1>
+
+        <FloatingContainer>
+            <section>
+                <h2>Úvod</h2>
+                <p>Tento dokument stanovuje podmínky pro používání tohoto hlasovacího systému. Používáním služby vyjadřujete souhlas s těmito podmínkami.</p>
+            </section>
+
+            <section>
+                <h2>Povaha služby</h2>
+                <p>Tato platforma slouží výhradně k organizaci a provádění hlasování. Systém umožňuje vytváření anonymních i neanonymních hlasování podle volby organizátora.</p>
+            </section>
+
+            <section>
+                <h2>Přístup k systému</h2>
+                <p>Registrace nových uživatelů není volně dostupná. Přístup do systému je možný pouze na základě pozvání od administrátora. Administrátor rozhoduje o tom, kdo získá přístup k systému a jaká oprávnění bude mít.</p>
+            </section>
+
+            <section>
+                <h2>Odpovědnost provozovatele</h2>
+                <p><strong>Důležité upozornění:</strong> Tento systém je provozován jako samostatná instance pod správou konkrétního správce serveru. Nelze zaručit, že správce serveru neupravil zdrojový kód programu nebo neprovádí jiné zásahy do funkčnosti systému.</p>
+                <p>Legitimita celého hlasovacího procesu je přímo závislá na důvěryhodnosti provozovatele konkrétní instance. Pokud máte jakékoli pochybnosti o integritě systému, doporučujeme toto řešit přímo se správcem.</p>
+            </section>
+
+            <section>
+                <h2>Pravidla používání</h2>
+                <ul>
+                    <li>Uživatel nesmí zneužívat systém k neoprávněnému přístupu k datům jiných uživatelů</li>
+                    <li>Uživatel nesmí provádět útoky na systém nebo narušovat jeho integritu</li>
+                    <li>Uživatel nesmí úmyslně manipulovat s výsledky hlasování</li>
+                    <li>Uživatel nesmí sdílet své přihlašovací údaje s třetími osobami</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>Typy hlasování</h2>
+                <h3>Anonymní hlasování</h3>
+                <p>Systém používá technologii "blindly signed tokenů", která zajišťuje anonymitu hlasujících. Administrátor může zjistit pouze použití hlasovacího tokenu, nikoli konkrétní volbu uživatele.</p>
+
+                <h3>Neanonymní hlasování</h3>
+                <p>U neanonymního hlasování jsou informace o tom, kdo a jak hlasoval, dostupné organizátorovi hlasování.</p>
+            </section>
+
+            <section>
+                <h2>Ukončení přístupu</h2>
+                <p>Administrátor si vyhrazuje právo ukončit přístup uživatele k systému v případě porušení těchto podmínek nebo z jiných závažných důvodů.</p>
+            </section>
+
+            <section>
+                <h2>Dostupnost služby</h2>
+                <p>Neposkytujeme žádnou záruku ohledně nepřetržité dostupnosti služby. Provozovatel může systém kdykoliv upravit, pozastavit nebo ukončit bez předchozího upozornění.</p>
+            </section>
+
+            <section>
+                <h2>Změny podmínek</h2>
+                <p>Tyto podmínky mohou být čas od času aktualizovány. O významných změnách budou uživatelé informováni.</p>
+            </section>
+
+            <section>
+                <h2>Kontakt</h2>
+                <p>Máte-li jakékoli dotazy ohledně těchto podmínek nebo fungování systému, kontaktujte prosím správce systému.</p>
+            </section>
+        </FloatingContainer>
+    </div>
+</Layout>
+
+<style>
+    section {
+        margin-bottom: 2rem;
+    }
+
+    h2 {
+        color: #333;
+        margin-top: 1.5rem;
+    }
+
+    h3 {
+        color: #444;
+        margin-top: 1rem;
+    }
+
+    ul {
+        padding-left: 1.5rem;
+    }
+
+    strong {
+        font-weight: 600;
+    }
+</style>

@@ -1,0 +1,184 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { Icon } from "astro-icon/components";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+// Funkce pro získání informací o balíčcích
+async function getPackageInfo() {
+    try {
+        // Načtení package.json z kořenového adresáře projektu
+        const packageJsonPath = path.resolve(process.cwd(), "package.json");
+        const packageJsonContent = await fs.readFile(packageJsonPath, "utf-8");
+        const packageJson = JSON.parse(packageJsonContent);
+
+        // Kombinace všech závislostí
+        const allDependencies = {
+            ...packageJson.dependencies || {},
+            ...packageJson.devDependencies || {}
+        };
+
+        // Vytvoření pole informací o balíčcích
+        const packagesInfo = await Promise.all(
+            Object.keys(allDependencies).map(async (packageName) => {
+                try {
+                    // Cesta k package.json daného balíčku
+                    const depPackagePath = path.resolve(
+                        process.cwd(),
+                        "node_modules",
+                        packageName,
+                        "package.json"
+                    );
+
+                    const depPackageContent = await fs.readFile(depPackagePath, "utf-8");
+                    const depPackage = JSON.parse(depPackageContent);
+
+                    // Zpracování informací o autorovi
+                    let author = "Neuvedeno";
+                    if (typeof depPackage.author === "string") {
+                        author = depPackage.author;
+                    } else if (depPackage.author?.name) {
+                        author = depPackage.author.name;
+                    }
+
+                    // Zpracování URL
+                    let homepage = depPackage.homepage || "";
+                    if (!homepage && depPackage.repository?.url) {
+                        homepage = depPackage.repository.url
+                            .replace(/^git\+/, "")
+                            .replace(/\.git$/, "")
+                            .replace(/^git@github\.com:/, "https://github.com/");
+                    }
+
+                    return {
+                        name: packageName,
+                        version: depPackage.version || allDependencies[packageName],
+                        license: depPackage.license || "Neuvedeno",
+                        author: author,
+                        homepage: homepage || "Neuvedeno"
+                    };
+                } catch (err) {
+                    return {
+                        name: packageName,
+                        version: allDependencies[packageName],
+                        license: "Neuvedeno",
+                        author: "Neuvedeno",
+                        homepage: "Neuvedeno"
+                    };
+                }
+            })
+        );
+
+        // Seřazení balíčků podle jména
+        return packagesInfo.sort((a, b) => a.name.localeCompare(b.name));
+
+    } catch (error) {
+        console.error("Chyba při získávání informací o balíčcích:", error);
+        return [];
+    }
+}
+
+const packages = await getPackageInfo();
+---
+
+<Layout title="Použité knihovny a licence">
+    <div class="container">
+        <h1>Použité knihovny a licence</h1>
+
+        <p class="intro">
+            Tento systém využívá následující open-source knihovny a komponenty. Děkujeme všem autorům za jejich práci.
+        </p>
+
+        <div class="table-container">
+            <table class="packages-table">
+                <thead>
+                <tr>
+                    <th>Název balíčku</th>
+                    <th>Verze</th>
+                    <th>Licence</th>
+                    <th>Autor</th>
+                    <th>Odkaz</th>
+                </tr>
+                </thead>
+                <tbody>
+                {packages.map((pkg) => (
+                        <tr>
+                            <td>{pkg.name}</td>
+                            <td>{pkg.version}</td>
+                            <td>{pkg.license}</td>
+                            <td>{pkg.author}</td>
+                            <td>
+                                {pkg.homepage !== "Neuvedeno" ? (
+                                        <a href={pkg.homepage} target="_blank" rel="noopener noreferrer">
+                                            <Icon name="iconoir:open-in-browser" /> Navštívit
+                                        </a>
+                                ) : (
+                                    "Není k dispozici"
+                                )}
+                            </td>
+                        </tr>
+                ))}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</Layout>
+
+<style>
+    .intro {
+        margin: 2rem 0;
+        text-align: center;
+    }
+
+    .table-container {
+        overflow-x: auto;
+        margin-bottom: 2rem;
+    }
+
+    .packages-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 2rem;
+        font-size: 0.9rem;
+    }
+
+    .packages-table th,
+    .packages-table td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .packages-table th {
+        background-color: #f5f5f5;
+        font-weight: bold;
+        border-bottom: 2px solid #ddd;
+    }
+
+    .packages-table tr:hover {
+        background-color: #f9f9f9;
+    }
+
+    .packages-table a {
+        color: #4CAF50;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .packages-table a:hover {
+        text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+        .packages-table {
+            font-size: 0.8rem;
+        }
+
+        .packages-table th,
+        .packages-table td {
+            padding: 8px 10px;
+        }
+    }
+</style>

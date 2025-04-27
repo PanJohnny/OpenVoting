@@ -1,14 +1,14 @@
 ---
 import Layout from "../../../layouts/Layout.astro";
-import { PollModel } from "../../../util/polls";
-import { PollOptionModel } from "../../../util/poll_options";
-import { PollVoteModel } from "../../../util/poll_votes";
+import {PollModel} from "../../../util/polls";
+import {PollOptionModel} from "../../../util/poll_options";
+import {PollVoteModel} from "../../../util/poll_votes";
 import Messenger from "../../../util/ui_utils";
 import Message from "../../../components/Message.astro";
 import FloatingContainer from "../../../components/FloatingContainer.astro";
 
 // Získání ID ankety z URL parametrů
-const { poll_id } = Astro.params;
+const {poll_id} = Astro.params;
 
 // Získání přihlášeného uživatele
 const user = await Astro.session?.get("user");
@@ -49,6 +49,7 @@ if (Astro.request.method === "POST") {
     }
 }
 
+let userVoteTable;
 // Načtení dat ankety
 try {
     if (poll_id) {
@@ -71,8 +72,11 @@ try {
 
                 voteCounts = await PollVoteModel.getPollResults(parseInt(poll_id));
 
-                totalVotes = voteCounts.reduce((sum:any, option:any) => sum + parseInt(option.vote_count), 0);
+                totalVotes = voteCounts.reduce((sum: any, option: any) => sum + parseInt(option.vote_count), 0);
 
+                if (!poll.anonymous) {
+                    userVoteTable = await PollVoteModel.getUsernameAndChosenOptionOfVoters(poll_id);
+                }
                 // Before poll is closed
                 if (canClosePoll) {
                     if (isOwner) {
@@ -117,7 +121,7 @@ try {
 
         {
             messenger.map(m => (
-                    <Message message={m} />
+                    <Message message={m}/>
             ))
         }
 
@@ -143,6 +147,23 @@ try {
                                     </div>
                             );
                         })}
+                    </div>
+                </FloatingContainer>
+        )}
+
+
+        {canViewResults && !poll.anonymous && userVoteTable && (
+                <FloatingContainer>
+                    <h2>Hlasování uživatelů</h2>
+                    <div class="results-list">
+                        {userVoteTable.map((vote: any) => (
+                                <div class="result-item">
+                                    <div class="result-info">
+                                        <span class="result-text">{vote.name}</span>
+                                        <span class="result-count">{vote.content}</span>
+                                    </div>
+                                </div>
+                        ))}
                     </div>
                 </FloatingContainer>
         )}
@@ -296,7 +317,7 @@ try {
 </style>
 
 <script>
-    document.getElementById('close-poll-btn')?.addEventListener('click', function(event) {
+    document.getElementById('close-poll-btn')?.addEventListener('click', function (event) {
         const confirmed = confirm('Opravdu chcete ukončit tuto anketu? Tato akce je nevratná.');
         if (!confirmed) {
             event.preventDefault();

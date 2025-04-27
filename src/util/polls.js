@@ -34,13 +34,13 @@ export const PollModel = {
 
     // Získání všech anket
     async getAll() {
-        const result = await query('SELECT * FROM polls');
+        const result = await query('SELECT * FROM polls ORDER BY updated_at DESC');
         return result.rows;
     },
 
     // Získání anket podle vlastníka
     async getByOwnerId(owner_id) {
-        const result = await query('SELECT * FROM polls WHERE owner_id = $1', [owner_id]);
+        const result = await query('SELECT * FROM polls WHERE owner_id = $1 ORDER BY updated_at DESC', [owner_id]);
         return result.rows;
     },
 
@@ -52,7 +52,7 @@ export const PollModel = {
 
     // Získání aktivních anket (nezaexpirovaných)
     async getActive() {
-        const result = await query('SELECT * FROM polls WHERE expires > CURRENT_TIMESTAMP OR expires IS NULL');
+        const result = await query('SELECT * FROM polls WHERE expires > CURRENT_TIMESTAMP OR expires IS NULL ORDER BY updated_at DESC');
         return result.rows;
     }
 };

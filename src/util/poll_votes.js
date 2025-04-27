@@ -72,5 +72,16 @@ export const PollVoteModel = {
             WHERE pv.user_id = $1
         `, [user_id]);
         return result.rows;
+    },
+
+    async getUsernameAndChosenOptionOfVoters(poll_id) {
+        const result = await query(`
+            SELECT u.name, po.content
+            FROM poll_votes pv
+            JOIN users u ON pv.user_id = u.id
+            JOIN poll_options po ON pv.option_id = po.id
+            WHERE pv.poll_id = $1
+        `, [poll_id]);
+        return result.rows;
     }
 };
