@@ -1,0 +1,193 @@
+---
+import Layout from "../../../layouts/Layout.astro";
+import {PollModel} from "../../../util/polls";
+import {PollOptionModel} from "../../../util/poll_options";
+import {PollVoteModel} from "../../../util/poll_votes";
+import {UsedTokenModel} from "../../../util/blind_signatures";
+import FloatingContainer from "../../../components/FloatingContainer.astro";
+import Message from "../../../components/Message.astro";
+import Messenger from "../../../util/ui_utils";
+import crypto from "crypto";
+
+const messenger = new Messenger();
+
+// Získání tokenu z URL
+const {token} = Astro.params;
+if (!token) {
+    return Astro.redirect("/");
+}
+
+// Dekódovat token
+let pollId, baseToken, signature;
+let poll = null;
+let options = [];
+let voted = false;
+
+try {
+    // Dekódovat token
+    const tokenData = JSON.parse(Buffer.from(token, 'base64url').toString());
+    pollId = tokenData.p;
+    baseToken = tokenData.t;
+    signature = tokenData.s;
+
+    // Získat anketu
+    poll = await PollModel.getById(pollId);
+    if (!poll) {
+        throw new Error("Anketa neexistuje");
+    }
+
+    // Ověřit, zda jde o anonymní anketu
+    if (!poll.anonymous) {
+        throw new Error("Tato anketa nevyužívá anonymní hlasování");
+    }
+
+    // Získat možnosti ankety
+    options = await PollOptionModel.getByPollId(pollId);
+
+    // Vytvořit hash tokenu
+    const tokenHash = crypto.createHash('sha256').update(baseToken).digest('hex');
+
+    // Zjistit, zda již byl token použit
+    const isUsed = await UsedTokenModel.isUsed(pollId, tokenHash);
+    if (isUsed) {
+        voted = true;
+        messenger.info("S tímto odkazem již bylo hlasováno. Každý odkaz lze použít pouze jednou.");
+    }
+
+    // Ověřit podpis tokenu
+    const isValid = await PollModel.verifySignature(pollId, baseToken, signature);
+    if (!isValid) {
+        throw new Error("Neplatný token pro hlasování");
+    }
+
+    // Zpracování hlasování
+    if (Astro.request.method === "POST" && !voted) {
+        const formData = await Astro.request.formData();
+        const optionIds = formData.getAll("option");
+
+        if (!optionIds || optionIds.length === 0) {
+            messenger.error("Vyberte alespoň jednu možnost");
+        } else if (poll.max_options !== null && optionIds.length > poll.max_options) {
+            messenger.error(`Můžete zvolit maximálně ${poll.max_options} možností`);
+        } else {
+            try {
+                // Uložit hlasy
+                for (const optionId of optionIds) {
+                    await PollVoteModel.addAnonymousVote(pollId, parseInt(optionId as string), baseToken, signature);
+                }
+
+                voted = true;
+                messenger.success("Váš hlas byl úspěšně zaznamenán, děkujeme.");
+            } catch (error: any) {
+                if (error.message === "Token has already been used") {
+                    messenger.error("S tímto odkazem již bylo hlasováno. Každý odkaz lze použít pouze jednou.");
+                } else {
+                    console.error(error);
+                    messenger.error("Nastala neočekávaná chyba při zpracování vašeho hlasu");
+                }
+            }
+        }
+    }
+} catch (error) {
+    console.error("Chyba při zpracování tokenu:", error);
+    messenger.error("Neplatný odkaz pro hlasování");
+}
+---
+
+<Layout title={poll ? `Hlasování: ${poll.name}` : "Neplatný odkaz"}>
+    <div class="container">
+        {messenger.map(m =>
+                <Message message={m}/>
+        )}
+
+        {poll ? (
+                <FloatingContainer>
+                    <h1>{poll.name}</h1>
+                    {!voted ? (
+                            <form method="POST">
+                                <div class="options-container">
+                                    {options.map((option: any) => (
+                                            <div class="vote-option">
+                                                <label>
+                                                    <input
+                                                            type={poll.max_options !== null && poll.max_options > 1 ? "checkbox" : "radio"}
+                                                            name="option"
+                                                            value={option.id}
+                                                            required={poll.max_options === 1}
+                                                    >
+                                                    {option.content}
+                                                </label>
+                                            </div>
+                                    ))}
+                                </div>
+
+                                {poll.max_options && poll.max_options > 1 && (
+                                        <div class="info">
+                                            <p>Můžete vybrat až {poll.max_options} možností</p>
+                                        </div>
+                                )}
+
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">Hlasovat</button>
+                                </div>
+                            </form>
+                    ) : (
+                            <div class="vote-complete">
+                                <p>Děkujeme za váš hlas!</p>
+                                <a href={"/poll/results/" + pollId}>Zobrazit výsledky hlasování</a>
+                            </div>
+                    )}
+                </FloatingContainer>
+        ) : (
+                <FloatingContainer>
+                    <h1>Neplatný odkaz pro hlasování</h1>
+                    <p>Tento odkaz je neplatný nebo již byl použit.</p>
+                </FloatingContainer>
+        )}
+    </div>
+</Layout>
+
+<style>
+    .options-container {
+        margin: 20px 0;
+    }
+
+    .vote-option {
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #eee;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+    }
+
+    .vote-option:hover {
+        background-color: #f8f8f8;
+    }
+
+    .vote-option label {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        cursor: pointer;
+    }
+
+    .info {
+        margin: 15px 0;
+        padding: 10px;
+        background-color: #f0f8ff;
+        border-radius: 4px;
+        border-left: 4px solid #3498db;
+    }
+
+    .form-actions {
+        margin-top: 20px;
+    }
+
+    .vote-complete {
+        text-align: center;
+        padding: 20px;
+        background-color: #e6ffe6;
+        border-radius: 4px;
+        margin: 20px 0;
+    }
+</style>

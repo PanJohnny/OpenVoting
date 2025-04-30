@@ -3,8 +3,7 @@ import Layout from "../../layouts/Layout.astro";
 import { PollModel } from "../../util/polls";
 import { GroupModel } from "../../util/groups";
 import { PollOptionModel } from "../../util/poll_options";
-import { PollVoterModel } from "../../util/poll_voters";
-import crypto from "crypto";
+import { BlindTokenModel } from "../../util/blind_token";
 import FloatingContainer from "../../components/FloatingContainer.astro";
 import Note from "../../components/Note.astro";
 import Message from "../../components/Message.astro";
@@ -21,7 +20,7 @@ const userGroups = await GroupModel.getByOwnerId(user.id);
 const messenger = new Messenger();
 
 let pollLink = "";
-let voterLinks = [];
+let voterLinks: string[] = [];
 
 // Zpracování formuláře
 if (Astro.request.method === "POST") {
@@ -60,21 +59,13 @@ if (Astro.request.method === "POST") {
 
         // Anonymous voting - gen key pairs
         if (isAnonymous) {
-            // Generování volebních klíčů pro anonymní anketu
-            voterLinks = [];
-            for (let i = 0; i < votersCount; i++) {
-                // Uložení klíče do databáze a získání ID
-                const keypair = await PollVoterModel.generateKeypair(poll.id);
+            const updatedPoll = await PollModel.generateSigningKeys(poll.id);
 
-                // Vytvoření hashe pro verifikaci - kombinuje ID ankety a ID klíče
-                const verificationHash = crypto.createHash('sha256')
-                    .update(`${poll.id}-${keypair.id}-${user.id}`)
-                    .digest('hex');
+            const tokens = await BlindTokenModel.generateTokens(poll.id, votersCount);
 
-                // Vytvoření odkazu pro hlasování
-                const link = `/poll/share/${poll.id}/${keypair.id}/${verificationHash}`;
-                voterLinks.push(new URL(link, Astro.url).href);
-            }
+            voterLinks = tokens.map(token => {
+                return `/poll/anonymous/${token.tokenData}`;
+            });
 
             messenger.success(`Anonymní anketa "${pollName}" byla úspěšně vytvořena. Níže jsou odkazy pro hlasování.`);
         } else {

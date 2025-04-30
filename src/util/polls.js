@@ -1,5 +1,6 @@
 // src/util/polls.js
 import { query } from './db.js';
+import crypto from 'crypto';
 
 export const PollModel = {
     // Vytvoření nové ankety
@@ -54,5 +55,65 @@ export const PollModel = {
     async getActive() {
         const result = await query('SELECT * FROM polls WHERE expires > CURRENT_TIMESTAMP OR expires IS NULL ORDER BY updated_at DESC');
         return result.rows;
+    },
+
+    // Generování klíčů pro blind signature při vytváření anonymní ankety
+    async generateSigningKeys(pollId) {
+        // Vytvoření RSA klíčů pro podepisování
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+            modulusLength: 2048,
+            publicKeyEncoding: {
+                type: 'spki',
+                format: 'pem'
+            },
+            privateKeyEncoding: {
+                type: 'pkcs8',
+                format: 'pem'
+            }
+        });
+
+        // Uložení klíčů k anketě
+        const result = await query(
+            'UPDATE polls SET signing_key = $1, verification_key = $2 WHERE id = $3 RETURNING *',
+            [privateKey, publicKey, pollId]
+        );
+        return result.rows[0];
+    },
+
+    // Podepsání zaslepené zprávy pomocí klíče ankety
+    async signBlindedMessage(pollId, blindedMessage) {
+        // Nejdříve načteme privátní klíč ankety
+        const keyResult = await query('SELECT signing_key FROM polls WHERE id = $1', [pollId]);
+        if (!keyResult.rows.length || !keyResult.rows[0].signing_key) {
+            throw new Error('Signing key not found for poll');
+        }
+
+        const privateKey = keyResult.rows[0].signing_key;
+
+        // Podepisování zaslepené zprávy
+        const signer = crypto.createSign('SHA256');
+        signer.update(blindedMessage);
+        signer.end();
+
+        const signature = signer.sign(privateKey, 'base64');
+        return signature;
+    },
+
+    // Ověření podepsaného tokenu
+    async verifySignature(pollId, message, signature) {
+        // Načteme veřejný klíč ankety
+        const keyResult = await query('SELECT verification_key FROM polls WHERE id = $1', [pollId]);
+        if (!keyResult.rows.length || !keyResult.rows[0].verification_key) {
+            throw new Error('Verification key not found for poll');
+        }
+
+        const publicKey = keyResult.rows[0].verification_key;
+
+        // Ověření podpisu
+        const verifier = crypto.createVerify('SHA256');
+        verifier.update(message);
+        verifier.end();
+
+        return verifier.verify(publicKey, signature, 'base64');
     }
 };

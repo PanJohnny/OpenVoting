@@ -1,6 +1,7 @@
 // src/util/poll_votes.js
-import { query } from './db.js';
+import { query, getClient } from './db.js';
 import crypto from 'crypto';
+import {UsedTokenModel} from "./blind_signatures.js";
 
 export const PollVoteModel = {
     // Přidání hlasu k anketě (pro nepřihlášeného uživatele s keypair)
@@ -83,5 +84,44 @@ export const PollVoteModel = {
             WHERE pv.poll_id = $1
         `, [poll_id]);
         return result.rows;
+    },
+
+    // Přidání hlasu s anonymním tokenem
+    async addAnonymousVote(pollId, optionId, token, signature) {
+        // Vytvoříme hash tokenu pro uložení do databáze
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+        // Zkontrolujeme, zda token nebyl již použit
+        const isUsed = await UsedTokenModel.isUsed(pollId, tokenHash);
+        if (isUsed) {
+            throw new Error('Token has already been used');
+        }
+
+        // Začneme transakci
+        const client = await getClient();
+
+        try {
+            await client.query('BEGIN');
+
+            // Přidáme token do použitých tokenů
+            await client.query(
+                'INSERT INTO used_voting_tokens (poll_id, token_hash) VALUES ($1, $2)',
+                [pollId, tokenHash]
+            );
+
+            // Přidáme hlas
+            const voteResult = await client.query(
+                'INSERT INTO poll_votes (poll_id, option_id, token_hash, signature) VALUES ($1, $2, $3, $4) RETURNING *',
+                [pollId, optionId, tokenHash, signature]
+            );
+
+            await client.query('COMMIT');
+            return voteResult.rows[0];
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 };
