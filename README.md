@@ -1,47 +1,18 @@
-# Astro Starter Kit: Minimal
+# OpenVoting
+Otevřený hlasovací systém, který umožňuje anonymní i neanonymní hlasování. Pokouší se zajistit transparentnost, ale zároveň anonymitu hlasujících, a to aby i člověk s přístupem k databázi neměl být schopný zjistit vaše data.
 
-```sh
-npm create astro@latest -- --template minimal
-```
+> [!NOTE]
+> Tento projekt by měl být používaný pouze pro nedůležité ankety. Zabezpečení může správce serveru obejít úpravou zdrojového kódu. Vše co zde vidíte je bez záruky a odpovědnosti.
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/withastro/astro/tree/latest/examples/minimal)
-[![Open with CodeSandbox](https://assets.codesandbox.io/github/button-edit-lime.svg)](https://codesandbox.io/p/sandbox/github/withastro/astro/tree/latest/examples/minimal)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/withastro/astro?devcontainer_path=.devcontainer/minimal/devcontainer.json)
+## Jak spustit?
+Cloneněte si tento repozitář a spusťte docker compose build, následně pomocí docker compose up zapnete stránku a databázi. Pokud hostujete databázi na jiném serveru nastavte environment variable POSTGRES_HOST na příslušnou IP adresu. Porty konfigurovatelné v docker-compose.yml - základní 4321, můžete změnit na 80 pro http.
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+## Technické informace
+* PostgreSQL
+* NodeJS s velmi rychlím frameworkem Astro.js
+* Docker
 
-## 🚀 Project Structure
+## Výpomoc
+Určitě k tomuto projektu přispějte, byl to můj víkendový projekt. Budu enormně rád.
 
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
-```
-
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
-
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
-
-Any static assets, like images, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+Tento projekt není vhodný k produkčnímu nasazení. Některé jeho části nejsou dodělány, ale je z naprosté většiny funkční.
