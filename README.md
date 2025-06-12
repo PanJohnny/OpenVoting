@@ -7,6 +7,7 @@ Otevřený hlasovací systém, který umožňuje anonymní i neanonymní hlasov�
 ## Jak spustit?
 Cloneněte si tento repozitář a spusťte docker compose build, následně pomocí docker compose up zapnete stránku a databázi. Pokud hostujete databázi na jiném serveru nastavte environment variable POSTGRES_HOST na příslušnou IP adresu. Porty konfigurovatelné v docker-compose.yml - základní 4321, můžete změnit na 80 pro http.
 
+Při prvním spuštění a otevření stránky v prohlížeči bude vyzváni k nastavení a vytvoření prvních uživatelů. Registrovat může jen admin!
 ## Technické informace
 * PostgreSQL
 * NodeJS s velmi rychlím frameworkem Astro.js
