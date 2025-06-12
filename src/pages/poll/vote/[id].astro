@@ -4,6 +4,7 @@ import { PollModel } from "../../../util/polls";
 import { PollOptionModel } from "../../../util/poll_options";
 import { PollVoteModel } from "../../../util/poll_votes";
 import { GroupMembershipModel } from "../../../util/group_memberships";
+import { AuditLogger } from "../../../util/audit_logger";
 
 // Kontrola přihlášení
 const user = await Astro.session?.get("user");
@@ -82,18 +83,26 @@ if (Astro.request.method === "POST" && canVote && poll) {
         } else if (selectedOptions.length > poll.max_options) {
             errorMessage = `Můžete vybrat maximálně ${poll.max_options} možností`;
         } else {
-            // Uložení hlasů - použití správné metody pro neanonymní hlasování
+            let votes = [];
             for (const optionId of selectedOptions) {
-                await PollVoteModel.createAuthenticated({
+                let vote = await PollVoteModel.createAuthenticated({
                     poll_id: pollId,
                     option_id: optionId,
                     user_id: user.id
                 });
+
+                vote["option_id"] = "REDACTED";
+
+                votes.push(vote);
             }
 
             successMessage = "Váš hlas byl úspěšně zaznamenán";
             voted = true;
             canVote = false;
+            // Logování hlasování
+            await AuditLogger.log("poll_vote", "user", user.id, {
+                votes,
+            });
         }
     } catch (error) {
         console.error("Chyba při hlasování:", error);

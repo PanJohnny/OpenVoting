@@ -1,0 +1,339 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import {AuditLogger} from "../../util/audit_logger.js";
+import {Icon} from "astro-icon/components";
+
+// Získání parametrů filtrování z URL
+const {searchParams} = Astro.url;
+
+const eventType = searchParams.get('eventType') || undefined;
+const entityType = searchParams.get('entityType') || undefined;
+const entityId = searchParams.get('entityId') || undefined;
+const startDate = searchParams.get('startDate') || undefined;
+const endDate = searchParams.get('endDate') || undefined;
+const limit = parseInt(searchParams.get('limit') || '50');
+const offset = parseInt(searchParams.get('offset') || '0');
+
+// Sestavení filtru
+const filters = {
+    eventType,
+    entityType,
+    entityId,
+    startDate,
+    endDate
+};
+
+// Odstranění nedefinovaných hodnot
+Object.keys(filters).forEach(key => { // @ts-ignore
+    if (filters[key] === undefined) delete filters[key];
+});
+
+// Získání logů
+const logs = await AuditLogger.query(filters, limit, offset);
+
+// Funkce pro formátování data
+function formatDate(dateString: string | undefined) {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return date.toLocaleString('cs-CZ');
+}
+---
+
+<Layout title="Systémový log">
+    <div class="container">
+        <h1>Systémový log</h1>
+
+        <div class="filter-panel">
+            <h2>Filtrování</h2>
+            <form method="get">
+                <div class="filter-grid">
+                    <div class="form-group">
+                        <label for="eventType">Typ události:</label>
+                        <input type="text" id="eventType" name="eventType" value={eventType || ""}>
+                    </div>
+                    <div class="form-group">
+                        <label for="entityType">Typ entity:</label>
+                        <input type="text" id="entityType" name="entityType" value={entityType || ""}>
+                    </div>
+                    <div class="form-group">
+                        <label for="entityId">ID entity:</label>
+                        <input type="text" id="entityId" name="entityId" value={entityId || ""}>
+                    </div>
+                    <div class="form-group">
+                        <label for="startDate">Od:</label>
+                        <input type="date" id="startDate" name="startDate" value={startDate || ""}>
+                    </div>
+                    <div class="form-group">
+                        <label for="endDate">Do:</label>
+                        <input type="date" id="endDate" name="endDate" value={endDate || ""}>
+                    </div>
+                    <div class="form-group">
+                        <label for="limit">Počet záznamů:</label>
+                        <input type="number" id="limit" name="limit" value={limit} min="1" max="500">
+                    </div>
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-primary">Filtrovat</button>
+                    <a href="/info/log" class="btn">Resetovat filtry</a>
+                </div>
+            </form>
+        </div>
+
+        <div class="table-container">
+            <table class="logs-table">
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Datum a čas</th>
+                    <th>Typ události</th>
+                    <th>Typ entity</th>
+                    <th>ID entity</th>
+                    <th>Metadata</th>
+                </tr>
+                </thead>
+                <tbody>
+                {logs.length > 0 ? logs.map((log: any) => (
+                        <tr>
+                            <td>{log.id}</td>
+                            <td>{formatDate(log.created_at)}</td>
+                            <td>{log.event_type}</td>
+                            <td>{log.entity_type}</td>
+                            <td>{log.entity_id}</td>
+                            <td>
+                                <button
+                                        class="metadata-btn"
+                                        onclick={`openMetadataDialog('${log.id}', ${JSON.stringify(JSON.stringify(log.metadata))})`}>
+                                    <Icon name="iconoir:eye"/>
+                                    Zobrazit
+                                </button>
+                            </td>
+                        </tr>
+                )) : (
+                        <tr>
+                            <td colspan="6" class="no-data">Nebyly nalezeny žádné záznamy</td>
+                        </tr>
+                )}
+                </tbody>
+            </table>
+        </div>
+
+        {/* Dialog pro zobrazení metadat */}
+        <dialog id="metadata-dialog">
+            <div class="dialog-header">
+                <h3>Metadata záznamu <span id="metadata-log-id"></span></h3>
+                <button class="close-btn" onclick="document.getElementById('metadata-dialog').close()">
+                    <Icon name="iconoir:cancel"/>
+                </button>
+            </div>
+            <div class="dialog-content">
+                <pre id="metadata-content"></pre>
+            </div>
+            <div class="dialog-footer">
+                <button onclick="document.getElementById('metadata-dialog').close()" class="btn">Zavřít</button>
+            </div>
+        </dialog>
+    </div>
+</Layout>
+
+<style>
+    .container {
+        padding: 1rem;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    h1 {
+        margin-bottom: 1.5rem;
+    }
+
+    .filter-panel {
+        background-color: #f5f5f5;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    h2 {
+        font-size: 1.2rem;
+        margin-bottom: 1rem;
+    }
+
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .form-group {
+        margin-bottom: 1rem;
+    }
+
+    label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+
+    input {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+
+    .filter-actions {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+        background-color: #f8f8f8;
+        cursor: pointer;
+        text-decoration: none;
+    }
+
+    .btn-primary {
+        background-color: #4CAF50;
+        border-color: #4CAF50;
+        color: white;
+    }
+
+    .btn:hover {
+        opacity: 0.9;
+    }
+
+    .table-container {
+        overflow-x: auto;
+    }
+
+    .logs-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 2rem;
+    }
+
+    .logs-table th,
+    .logs-table td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .logs-table th {
+        background-color: #f5f5f5;
+        font-weight: bold;
+    }
+
+    .logs-table tr:hover {
+        background-color: #f9f9f9;
+    }
+
+    .no-data {
+        text-align: center;
+        padding: 2rem;
+        color: #888;
+    }
+
+    .metadata-btn {
+        background: transparent;
+        border: none;
+        color: #4CAF50;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .metadata-btn:hover {
+        text-decoration: underline;
+    }
+
+    #metadata-dialog {
+        border: 1px solid #eee;
+        border-radius: 8px;
+        padding: 0;
+        max-width: 800px;
+        width: 80%;
+    }
+
+    .dialog-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-bottom: 1px solid #eee;
+    }
+
+    .dialog-content {
+        padding: 1rem;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    pre {
+        background-color: #f8f8f8;
+        padding: 1rem;
+        border-radius: 4px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+    }
+
+    .dialog-footer {
+        padding: 1rem;
+        border-top: 1px solid #eee;
+        text-align: right;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 1.2rem;
+    }
+
+    @media (max-width: 768px) {
+        .filter-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .logs-table {
+            font-size: 0.9rem;
+        }
+
+        .logs-table th,
+        .logs-table td {
+            padding: 8px 10px;
+        }
+
+        #metadata-dialog {
+            width: 95%;
+        }
+    }
+</style>
+
+<script is:inline>
+    function openMetadataDialog(logId, metadataJson) {
+        const dialog = document.getElementById('metadata-dialog');
+        const logIdElement = document.getElementById('metadata-log-id');
+        const metadataElement = document.getElementById('metadata-content') ;
+
+        logIdElement.textContent = logId;
+
+        try {
+            // Parse metadata from JSON string
+            const metadata = JSON.parse(metadataJson);
+
+            // Pretty print the JSON
+            metadataElement.textContent = JSON.stringify(metadata, null, 2);
+        } catch (e) {
+            console.error('Chyba při zpracování metadat:', e);
+            metadataElement.textContent = metadataJson || '{}';
+        }
+
+        dialog.showModal();
+    }
+</script>

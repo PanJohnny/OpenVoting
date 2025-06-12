@@ -149,3 +149,19 @@ CREATE TRIGGER update_polls_timestamp
     ON polls
     FOR EACH ROW
 EXECUTE FUNCTION update_timestamp();
+
+-- Vytvoření tabulky pro audit log
+CREATE TABLE IF NOT EXISTS audit_logs
+(
+    id          SERIAL PRIMARY KEY,
+    event_type  TEXT    NOT NULL,                                 -- např. 'poll_created', 'token_issued', 'vote_recorded'
+    entity_type TEXT,                                             -- např. 'poll', 'token', 'vote'
+    entity_id   TEXT,                                             -- ID související entity, pokud to neporušuje anonymitu
+    metadata    JSONB,                                            -- dodatečný kontext události (bez osobních údajů)
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexy pro efektivní vyhledávání a filtrování
+CREATE INDEX idx_audit_logs_event_type ON audit_logs (event_type);
+CREATE INDEX idx_audit_logs_entity_type ON audit_logs (entity_type);
+CREATE INDEX idx_audit_logs_created_at ON audit_logs (created_at);

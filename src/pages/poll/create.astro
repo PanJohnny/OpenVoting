@@ -4,6 +4,7 @@ import { PollModel } from "../../util/polls";
 import { GroupModel } from "../../util/groups";
 import { PollOptionModel } from "../../util/poll_options";
 import { BlindTokenModel } from "../../util/blind_token";
+import { AuditLogger } from "../../util/audit_logger";
 import FloatingContainer from "../../components/FloatingContainer.astro";
 import Note from "../../components/Note.astro";
 import Message from "../../components/Message.astro";
@@ -73,6 +74,20 @@ if (Astro.request.method === "POST") {
             pollLink = `/poll/vote/${poll.id}`;
         }
 
+        // Logování vytvoření ankety, nemusí být synchronní, kdyby se něco pokazilo, nevadí
+        AuditLogger.log(
+            "poll_create",
+            "poll",
+            poll.id,
+            {
+                name: pollName,
+                expires: expires ? expires.toISOString() : null,
+                anonymous: isAnonymous,
+                group_id: groupId !== "null" ? parseInt(groupId) : null,
+                max_options: maxOptions,
+                voters_count: votersCount
+            }
+        );
     } catch (error: any) {
         console.error("Chyba při vytváření ankety:", error);
         messenger.error(`Nastala neočekávaná chyba při vytváření ankety`);

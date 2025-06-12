@@ -4,6 +4,7 @@ import {PollModel} from "../../../util/polls";
 import {PollOptionModel} from "../../../util/poll_options";
 import {PollVoteModel} from "../../../util/poll_votes";
 import {UsedTokenModel} from "../../../util/blind_signatures";
+import { AuditLogger } from "../../../util/audit_logger";
 import FloatingContainer from "../../../components/FloatingContainer.astro";
 import Message from "../../../components/Message.astro";
 import Messenger from "../../../util/ui_utils";
@@ -72,9 +73,16 @@ try {
         } else {
             try {
                 // Uložit hlasy
+                let votes = [];
                 for (const optionId of optionIds) {
-                    await PollVoteModel.addAnonymousVote(pollId, parseInt(optionId as string), baseToken, signature);
+                    votes.push(await PollVoteModel.addAnonymousVote(pollId, parseInt(optionId as string), baseToken, signature));
                 }
+
+                // Audit log
+                AuditLogger.log("poll_vote", "anonymous", undefined, {
+                    pollId: pollId,
+                    options: votes
+                });
 
                 voted = true;
                 messenger.success("Váš hlas byl úspěšně zaznamenán, děkujeme.");
