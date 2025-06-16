@@ -1,0 +1,61 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import FloatingContainer from "../../components/FloatingContainer.astro";
+---
+<Layout title="O projektu">
+    <div class="container">
+        <h1 class="title">O projektu</h1>
+
+        <FloatingContainer>
+            <section>
+                <h2>OpenVoting</h2>
+                <p>OpenVoting je otevřený hlasovací systém, který umožňuje organizovat a spravovat hlasování a ankety. Je navržen tak, aby byl snadno použitelný a přístupný pro všechny.</p>
+            </section>
+
+            <section>
+                <h2>Hlavní funkce</h2>
+                <ul>
+                    <li><strong>Otevřenost:</strong> Kód je veřejně dostupný a každý si ho může prohlédnout nebo přispět.</li>
+                    <li><strong>Bezpečnost:</strong> Všechny hlasy jsou anonymní a zabezpečené.</li>
+                    <li><strong>Flexibilita:</strong> Podpora různých typů hlasování a anket.</li>
+                    <li><strong>Správa uživatelů:</strong> Možnost spravovat uživatelské účty a jejich oprávnění.</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>Technologie</h2>
+                <p>Systém je postaven na moderních webových technologiích, které zajišťují rychlost a spolehlivost. Používá se například Node.js pro serverovou část a moderní JavaScript frameworky pro frontend.</p>
+            </section>
+
+            <section>
+                <h2>Licence</h2>
+                <p>Projekt je licencovaný pod licencí <em>LGPL-2.1</em>.</p>
+                <a href="https://github.com/PanJohnny/OpenVoting/blob/master/LICENSE">Její plné znění zde</a>
+            </section>
+        </FloatingContainer>
+    </div>
+</Layout>
+
+<style>
+    section {
+        margin-bottom: 2rem;
+    }
+
+    h2 {
+        color: #333;
+        margin-top: 1.5rem;
+    }
+
+    h3 {
+        color: #444;
+        margin-top: 1rem;
+    }
+
+    ul {
+        padding-left: 1.5rem;
+    }
+
+    strong {
+        font-weight: 600;
+    }
+</style>
